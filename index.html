@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Desafio da Água</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1d8fe0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Água">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+:root{--bg:#f2f8fc;--card:#fff;--tx:#10212e;--mut:#5d7384;--ac:#1d8fe0;--ac2:#7cc8f5;--bd:#d6e6f1;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#0c1822;--card:#142636;--tx:#e6f1f8;--mut:#93aab9;--ac:#4aaef0;--ac2:#2a6f9c;--bd:#244057}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+main{max-width:520px;margin:0 auto;padding:16px}
+h1{font-size:1.5rem;margin:8px 0 2px}
+.sub{color:var(--mut);margin:0 0 14px;font-size:.9rem}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:14px;margin-bottom:14px}
+input{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:10px;width:100%;margin-top:8px}
+button{font:inherit;cursor:pointer;border:0;border-radius:12px;padding:12px 8px;background:var(--ac);color:#fff;font-weight:600}
+button:disabled{opacity:.6;cursor:wait}
+button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
+.row{display:flex;gap:8px;margin-top:10px}.row>*{flex:1}
+.big{font-size:2rem;font-weight:700;text-align:center}
+.row2{display:flex;align-items:center;gap:10px;margin:10px 0}
+.pos{width:28px;text-align:center;font-size:1.2rem}
+.bar{height:10px;border-radius:6px;background:var(--bd);overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--ac2),var(--ac))}
+.nm{display:flex;justify-content:space-between;gap:8px}
+.mut{color:var(--mut);font-size:.85rem}
+#note{color:#d6453d;font-size:.85rem;text-align:center;min-height:1.2em}
+#proofs{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:8px}
+.pf{margin:0}.pf img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;background:var(--bd);display:block}
+.pf figcaption{font-size:.75rem;color:var(--mut);margin-top:2px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <h1>💧 Desafio da Água</h1>
+  <p class="sub" id="date"></p>
+
+  <!-- LOGIN -->
+  <section id="auth" class="card" hidden>
+    <strong id="authTitle">Entrar</strong>
+    <input id="aName" maxlength="30" placeholder="Seu nome (para o placar)" autocomplete="nickname" hidden>
+    <input id="aEmail" type="email" placeholder="E-mail" autocomplete="email">
+    <input id="aPass" type="password" placeholder="Senha (mín. 6 caracteres)" autocomplete="current-password">
+    <div class="row"><button id="aGo">Entrar</button></div>
+    <div class="row"><button class="alt" id="aSwitch">Não tenho conta</button></div>
+    <p class="mut" id="aMsg"></p>
+  </section>
+
+  <!-- APP -->
+  <section id="app" hidden>
+    <div class="card">
+      <div class="mut" id="who"></div>
+      <div class="big" id="mine">0 ml</div>
+      <div class="row"><button id="bt">📸 Terminei a garrafinha</button></div>
+      <p class="mut" style="margin:6px 0 0">Tire uma foto com a garrafinha de cabeça para baixo para valer.</p>
+      <input type="file" id="shot" accept="image/*" capture="environment" hidden>
+      <div class="row"><button data-ml="200">+200</button><button data-ml="300">+300</button><button data-ml="500">+500</button></div>
+      <div class="row"><button class="alt" id="undo">Desfazer último</button><button class="alt" id="custom">Outro valor</button></div>
+      <label for="bottle" class="mut" style="display:block;margin-top:12px">Tamanho da sua garrafinha (ml)</label>
+      <div class="row"><input id="bottle" type="number" min="50" max="5000" step="50" inputmode="numeric" style="margin-top:0"><button class="alt" id="saveBottle" style="flex:0 0 100px">Salvar</button></div>
+      <div class="row"><button class="alt" id="logout">Sair</button></div>
+    </div>
+
+    <div class="card">
+      <strong>Placar de hoje</strong> <span class="mut">(meta: 2000 ml)</span>
+      <div id="board"></div>
+    </div>
+
+    <div class="card">
+      <strong>📸 Provas de hoje</strong>
+      <div id="proofs"></div>
+    </div>
+  </section>
+
+  <p id="note"></p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+// ====== CONFIGURAÇÃO ======
+const SUPABASE_URL = "COLE_AQUI_A_PROJECT_URL";       // ex.: https://abcdxyz.supabase.co
+const SUPABASE_ANON_KEY = "COLE_AQUI_A_ANON_KEY";     // chave "anon" / "publishable" (pública por design)
+const GOAL = 2000;               // meta diária em ml
+const REQUIRE_PHOTO_ALL = false; // true = exige foto também nos botões +200/+300/+500/Outro valor
+// ==========================
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, "0");
+const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
+
+let day = today(), me = null, myName = "", logs = [], pending = 500, started = null, signup = false, channel = null;
+let bottle = 500;
+try { bottle = parseInt(localStorage.getItem("agua-bottle"), 10) || 500; } catch (e) {}
+
+$("date").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+const note = t => { $("note").textContent = t || ""; };
+
+// ---------- Login ----------
+function setMode(isSignup) {
+  signup = isSignup;
+  $("authTitle").textContent = isSignup ? "Criar conta" : "Entrar";
+  $("aName").hidden = !isSignup;
+  $("aGo").textContent = isSignup ? "Criar conta" : "Entrar";
+  $("aSwitch").textContent = isSignup ? "Já tenho conta" : "Não tenho conta";
+  $("aPass").autocomplete = isSignup ? "new-password" : "current-password";
+  $("aMsg").textContent = "";
+}
+$("aSwitch").onclick = () => setMode(!signup);
+
+$("aGo").onclick = async () => {
+  const email = $("aEmail").value.trim(), pass = $("aPass").value, name = $("aName").value.trim();
+  if (!email || pass.length < 6 || (signup && !name)) { $("aMsg").textContent = "Preencha tudo (senha com 6+ caracteres)."; return; }
+  $("aGo").disabled = true; $("aMsg").textContent = "";
+  try {
+    if (signup) {
+      const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: { name } } });
+      if (error) throw error;
+      if (!data.session) $("aMsg").textContent = "Conta criada! Confirme pelo e-mail que enviamos e depois entre.";
+    } else {
+      const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+      if (error) throw error;
+    }
+  } catch (e) { $("aMsg").textContent = e.message || "Erro ao entrar."; }
+  $("aGo").disabled = false;
+};
+
+$("logout").onclick = () => sb.auth.signOut();
+
+function showAuth() {
+  started = null;
+  if (channel) { sb.removeChannel(channel); channel = null; }
+  $("app").hidden = true; $("auth").hidden = false; setMode(false);
+}
+
+sb.auth.onAuthStateChange((_ev, session) => {
+  if (session && session.user) {
+    if (started === session.user.id) return;
+    me = session.user; started = me.id;
+    setTimeout(startApp, 0); // evita chamar o Supabase dentro do callback de auth
+  } else { me = null; showAuth(); }
+});
+
+// ---------- App ----------
+async function startApp() {
+  $("auth").hidden = true; $("app").hidden = false;
+  const { data } = await sb.from("profiles").select("name").eq("id", me.id).maybeSingle();
+  myName = (data && data.name) || me.email.split("@")[0];
+  $("who").textContent = "Olá, " + myName + "! Quanto você bebeu?";
+  $("bottle").value = bottle; refreshBottleLabel();
+  await load();
+  channel = sb.channel("logs-live").on("postgres_changes", { event: "*", schema: "public", table: "logs" }, load).subscribe();
+}
+
+function refreshBottleLabel() { $("bt").textContent = "📸 Terminei a garrafinha (" + bottle + " ml)"; }
+
+async function load() {
+  if (!me) return;
+  const d = today(); if (d !== day) day = d;
+  const { data, error } = await sb.from("logs")
+    .select("id,user_id,ml,photo_path,created_at,profiles(name)")
+    .eq("day", day).order("created_at", { ascending: false });
+  if (error) { note("Erro ao carregar: " + error.message); return; }
+  note(""); logs = data || []; render();
+}
+
+function render() {
+  // placar
+  const tot = {};
+  logs.forEach(l => {
+    const t = tot[l.user_id] || (tot[l.user_id] = { name: (l.profiles && l.profiles.name) || "?", ml: 0 });
+    t.ml += l.ml;
+  });
+  const list = Object.values(tot).sort((a, b) => b.ml - a.ml);
+  const b = $("board"); b.textContent = "";
+  if (!list.length) { const p = document.createElement("p"); p.className = "mut"; p.textContent = "Ninguém bebeu nada ainda. Seja o primeiro!"; b.appendChild(p); }
+  const medals = ["🥇", "🥈", "🥉"], max = Math.max(GOAL, list.length ? list[0].ml : 0);
+  list.forEach((r, i) => {
+    const w = document.createElement("div"); w.className = "row2";
+    const pos = document.createElement("div"); pos.className = "pos"; pos.textContent = medals[i] || String(i + 1);
+    const mid = document.createElement("div"); mid.style.flex = "1";
+    const nm = document.createElement("div"); nm.className = "nm";
+    const a = document.createElement("span"); a.textContent = r.name + (r.ml >= GOAL ? " ✅" : "");
+    const c = document.createElement("span"); c.className = "mut"; c.textContent = r.ml + " ml";
+    nm.append(a, c);
+    const bar = document.createElement("div"); bar.className = "bar";
+    const fill = document.createElement("i"); fill.style.width = Math.min(100, Math.round(r.ml / max * 100)) + "%";
+    bar.appendChild(fill); mid.append(nm, bar); w.append(pos, mid); b.appendChild(w);
+  });
+  $("mine").textContent = logs.filter(l => l.user_id === me.id).reduce((s, l) => s + l.ml, 0) + " ml";
+
+  // provas
+  const box = $("proofs"); box.textContent = "";
+  const shots = logs.filter(l => l.photo_path).slice(0, 12);
+  if (!shots.length) { const e = document.createElement("p"); e.className = "mut"; e.textContent = "Nenhuma prova ainda."; box.appendChild(e); }
+  shots.forEach(l => {
+    const f = document.createElement("figure"); f.className = "pf";
+    const im = document.createElement("img");
+    im.alt = "Prova de " + ((l.profiles && l.profiles.name) || "");
+    im.loading = "lazy";
+    im.src = sb.storage.from("proofs").getPublicUrl(l.photo_path).data.publicUrl;
+    const cap = document.createElement("figcaption");
+    cap.textContent = ((l.profiles && l.profiles.name) || "?") + " · " + l.ml + " ml · " +
+      new Date(l.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    f.append(im, cap); box.appendChild(f);
+  });
+}
+
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onload = () => {
+      const s = Math.min(1, 800 / Math.max(im.width, im.height));
+      const c = document.createElement("canvas"); c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
+      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      c.toBlob(bl => bl ? res(bl) : rej(new Error("falha ao processar a foto")), "image/jpeg", 0.7);
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); rej(new Error("imagem inválida")); };
+    im.src = url;
+  });
+}
+
+async function addLog(ml, blob) {
+  if (!me || !(ml > 0)) return;
+  let path = null;
+  if (blob) {
+    path = me.id + "/" + Date.now() + ".jpg";
+    const up = await sb.storage.from("proofs").upload(path, blob, { contentType: "image/jpeg" });
+    if (up.error) { note("Não consegui enviar a foto: " + up.error.message); return; }
+  }
+  const { error } = await sb.from("logs").insert({ ml, day, photo_path: path });
+  if (error) { note("Não consegui salvar: " + error.message); return; }
+  await load();
+}
+
+function ask(ml) { // pede foto se necessário, senão registra direto
+  if (REQUIRE_PHOTO_ALL) { pending = ml; $("shot").click(); } else addLog(ml, null);
+}
+
+$("bt").onclick = () => { pending = bottle; $("shot").click(); };
+$("shot").onchange = async function () {
+  const f = this.files && this.files[0]; this.value = "";
+  if (!f) return;
+  try { note("Enviando…"); await addLog(pending, await shrink(f)); note(""); }
+  catch (e) { note("Não consegui ler a foto. Tente de novo."); }
+};
+document.querySelectorAll("[data-ml]").forEach(btn => btn.onclick = () => ask(parseInt(btn.dataset.ml, 10)));
+$("custom").onclick = () => { const v = parseInt(prompt("Quantos ml?", "250"), 10); if (v > 0 && v <= 5000) ask(v); };
+$("undo").onclick = async () => {
+  const last = logs.find(l => l.user_id === me.id); // lista já vem do mais novo para o mais antigo
+  if (!last) return;
+  const { error } = await sb.from("logs").delete().eq("id", last.id);
+  if (error) { note("Não consegui desfazer: " + error.message); return; }
+  if (last.photo_path) await sb.storage.from("proofs").remove([last.photo_path]);
+  await load();
+};
+$("saveBottle").onclick = () => {
+  const v = parseInt($("bottle").value, 10);
+  if (v > 0) { bottle = Math.min(5000, Math.max(50, v)); try { localStorage.setItem("agua-bottle", String(bottle)); } catch (e) {} }
+  $("bottle").value = bottle; refreshBottleLabel();
+};
+
+// atualiza placar de tempos em tempos (e vira o dia sozinho)
+setInterval(load, 30000);
+
+// ---------- App instalável (PWA) ----------
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+}
+
+// ---------- Início ----------
+if (SUPABASE_URL.startsWith("COLE_AQUI")) {
+  note("Falta configurar SUPABASE_URL e SUPABASE_ANON_KEY no topo do script do index.html.");
+} else {
+  sb.auth.getSession().then(({ data }) => { if (!data.session) showAuth(); });
+}
+</script>
+</body>
+</html>
