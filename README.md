@@ -1,55 +1,57 @@
-Desafio da Água (versão hospedada)
+# Desafio da Água (versão hospedada)
 
 App instalável no celular (PWA) feito de arquivos estáticos + Supabase para login, placar em tempo real e fotos de prova.
 
-1. Criar o projeto no Supabase
-Crie uma conta e um projeto em supabase.com (o plano gratuito basta para um grupo de amigos).
-Abra SQL Editor, cole o conteúdo de setup.sql e clique em Run. Isso cria as tabelas, as regras de segurança, o bucket de fotos e o tempo real.
-2. Configurar o login
-Em Authentication → Providers → Email, deixe o login por e-mail e senha ativo.
-Para os amigos entrarem na hora, desative Confirm email. Se preferir manter, cada pessoa precisa clicar no link que chega por e-mail.
-Depois de hospedar, vá em Authentication → URL Configuration e coloque o endereço do seu site em Site URL (usado nos e-mails de confirmação).
-3. Colocar as chaves no site
+## 1. Criar o projeto no Supabase
+1. Crie uma conta e um projeto em supabase.com (o plano gratuito basta para um grupo de amigos).
+2. Abra **SQL Editor**, cole o conteúdo de `setup.sql` e clique em **Run**.
+   Isso cria as tabelas, as regras de segurança, o bucket de fotos e o tempo real.
 
-Em Project Settings → API, copie a Project URL e a chave anon / publishable e cole no topo do script do index.html:
+## 2. Configurar o login
+- Em **Authentication → Providers → Email**, deixe o login por e-mail e senha ativo.
+- Para os amigos entrarem na hora, desative **Confirm email**. Se preferir manter, cada pessoa precisa clicar no link que chega por e-mail.
+- Depois de hospedar, vá em **Authentication → URL Configuration** e coloque o endereço do seu site em **Site URL** (usado nos e-mails de confirmação).
 
-js
+## 3. Colocar as chaves no site
+Em **Project Settings → API**, copie a **Project URL** e a chave **anon / publishable** e cole no topo do script do `index.html`:
+
+```js
 const SUPABASE_URL = "https://SEU-PROJETO.supabase.co";
 const SUPABASE_ANON_KEY = "sua-chave-anon";
+```
 
-A chave anon é pública por design: quem protege os dados são as regras (RLS) do setup.sql. Nunca coloque a chave service_role no site.
+A chave anon é pública por design: quem protege os dados são as regras (RLS) do `setup.sql`.
+**Nunca** coloque a chave `service_role` no site.
 
-4. Hospedar
-
+## 4. Hospedar
 Qualquer hospedagem de site estático serve, por exemplo:
+- **Netlify Drop** (arrasta a pasta em app.netlify.com/drop)
+- **Cloudflare Pages** ou **GitHub Pages**
+- **Vercel**
 
-Netlify Drop (arrasta a pasta em app.netlify.com/drop)
-Cloudflare Pages ou GitHub Pages
-Vercel
+Envie **todos os arquivos da pasta** (`index.html`, `manifest.webmanifest`, `sw.js` e os 3 ícones `.png`) e pronto. Mande o link para os amigos.
+O site precisa estar em **https** (todas as hospedagens acima já entregam isso), senão o app não instala nem abre a câmera.
 
-Envie todos os arquivos da pasta (index.html, manifest.webmanifest, sw.js e os 3 ícones .png) e pronto. Mande o link para os amigos. O site precisa estar em https (todas as hospedagens acima já entregam isso), senão o app não instala nem abre a câmera.
+## Ajustes rápidos (topo do script)
+- `GOAL`: meta diária em ml.
+- `REQUIRE_PHOTO_ALL`: `true` exige foto também nos botões +200/+300/+500/Outro valor.
 
-Ajustes rápidos (topo do script)
-GOAL: meta diária em ml.
-REQUIRE_PHOTO_ALL: true exige foto também nos botões +200/+300/+500/Outro valor.
-Observações
-As fotos ficam num bucket público (URLs longas e difíceis de adivinhar), visíveis só a quem tem o link da foto. Para privacidade total, dá para trocar por bucket privado com links assinados.
-Dá para apagar o histórico antigo quando quiser pelo Table Editor (tabela logs) e pelo Storage (bucket proofs).
-Instalar no celular (cada amigo faz uma vez)
+## Observações
+- As fotos ficam num bucket público (URLs longas e difíceis de adivinhar), visíveis só a quem tem o link da foto. Para privacidade total, dá para trocar por bucket privado com links assinados.
+- Dá para apagar o histórico antigo quando quiser pelo **Table Editor** (tabela `logs`) e pelo **Storage** (bucket `proofs`).
 
-Android (Chrome)
+## Instalar no celular (cada amigo faz uma vez)
 
-Abra o link do site.
-Toque nos três pontinhos e em Instalar app (ou Adicionar à tela inicial).
+**Android (Chrome)**
+1. Abra o link do site.
+2. Toque nos três pontinhos e em **Instalar app** (ou **Adicionar à tela inicial**).
 
-iPhone (Safari)
-
-Abra o link no Safari (outros navegadores não instalam).
-Toque no botão de compartilhar e em Adicionar à Tela de Início.
-Abra pelo ícone novo, e não mais pelo navegador.
+**iPhone (Safari)**
+1. Abra o link **no Safari** (outros navegadores não instalam).
+2. Toque no botão de compartilhar e em **Adicionar à Tela de Início**.
+3. Abra pelo ícone novo, e não mais pelo navegador.
 
 O app abre em tela cheia com o ícone da gota, pede permissão da câmera na primeira foto e se atualiza sozinho quando você publicar uma versão nova.
 
-Atualizar o app
-
-Troque os arquivos na hospedagem (ou envie para o GitHub, se ela estiver ligada ao repositório). Quem já instalou recebe a versão nova na próxima vez que abrir o app com internet. Se mudar algum arquivo guardado no celular (como os ícones), aumente o número em CACHE = "agua-v1" no sw.js para agua-v2.
+## Atualizar o app
+Troque os arquivos na hospedagem (ou envie para o GitHub, se ela estiver ligada ao repositório). Quem já instalou recebe a versão nova na próxima vez que abrir o app com internet. Se mudar algum arquivo guardado no celular (como os ícones), aumente o número em `CACHE = "agua-v1"` no `sw.js` para `agua-v2`.
