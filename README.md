@@ -55,3 +55,10 @@ O app abre em tela cheia com o ícone da gota, pede permissão da câmera na pri
 
 ## Atualizar o app
 Troque os arquivos na hospedagem (ou envie para o GitHub, se ela estiver ligada ao repositório). Quem já instalou recebe a versão nova na próxima vez que abrir o app com internet. Se mudar algum arquivo guardado no celular (como os ícones), aumente o número em `CACHE = "agua-v1"` no `sw.js` para `agua-v2`.
+
+## Cadastro só com convite (link de convite)
+1. No SQL Editor do Supabase, rode o `convite.sql` (depois do `setup.sql`). Ele cria um código aleatório e passa a barrar qualquer cadastro sem o código certo.
+2. Para ver o código, rode: `select value from public.app_settings where key = 'invite_code';`
+3. Monte o link: `https://SEU-SITE.netlify.app/?convite=CODIGO` e mande para os amigos. Quem abrir já cai na tela de criar conta, com o código preenchido.
+4. Para trocar o código (e invalidar o link antigo): `update public.app_settings set value = 'meucodigo2026' where key = 'invite_code';` (só letras e números).
+5. Quem já tem conta não é afetado. O código só é cobrado no cadastro.
