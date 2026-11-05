@@ -34,6 +34,9 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
 .nm{display:flex;justify-content:space-between;gap:8px}
 .mut{color:var(--mut);font-size:.85rem}
 #note{color:#d6453d;font-size:.85rem;text-align:center;min-height:1.2em}
+#note.ok{color:var(--ac)}
+.gitem{width:100%;text-align:left;margin-top:8px}
+.code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px;margin-top:8px;font-size:.85rem}
 #proofs{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:8px}
 .pf{margin:0}.pf img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;background:var(--bd);display:block}
 .pf figcaption{font-size:.75rem;color:var(--mut);margin-top:2px}
@@ -49,7 +52,6 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
   <section id="auth" class="card" hidden>
     <strong id="authTitle">Entrar</strong>
     <input id="aName" maxlength="30" placeholder="Seu nome (para o placar)" autocomplete="nickname" hidden>
-    <input id="aInvite" maxlength="40" placeholder="Código do convite" autocomplete="off" autocapitalize="off" hidden>
     <input id="aEmail" type="email" placeholder="E-mail" autocomplete="email">
     <input id="aPass" type="password" placeholder="Senha (mín. 6 caracteres)" autocomplete="current-password">
     <div class="row"><button id="aGo">Entrar</button></div>
@@ -57,10 +59,38 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
     <p class="mut" id="aMsg"></p>
   </section>
 
+  <!-- GRUPOS -->
+  <section id="groups" hidden>
+    <div class="card" id="gListCard" hidden>
+      <strong>Seus grupos</strong>
+      <div id="gList"></div>
+    </div>
+    <div class="card">
+      <strong>Criar um grupo novo</strong>
+      <input id="gName" maxlength="40" placeholder="Nome do grupo (ex.: Galera da água)">
+      <div class="row"><button id="gCreate">Criar grupo</button></div>
+    </div>
+    <div class="card">
+      <strong>Entrar com um código</strong>
+      <input id="gCode" maxlength="40" placeholder="Código do convite" autocomplete="off" autocapitalize="off">
+      <div class="row"><button class="alt" id="gJoin">Entrar no grupo</button></div>
+    </div>
+    <div class="row"><button class="alt" id="logout2">Sair da conta</button></div>
+  </section>
+
   <!-- APP -->
   <section id="app" hidden>
     <div class="card">
-      <div class="mut" id="who"></div>
+      <div class="nm"><strong id="gTitle"></strong><span class="mut" id="who"></span></div>
+      <div class="row"><button class="alt" id="invite">Convidar amigos</button><button class="alt" id="switchGroup">Trocar de grupo</button></div>
+      <div id="invBox" hidden>
+        <div class="code" id="invLink"></div>
+        <div class="row"><button id="invShare">Compartilhar link</button><button class="alt" id="invNew" hidden>Gerar novo código</button></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="mut">Quanto você bebeu hoje?</div>
       <div class="big" id="mine">0 ml</div>
       <div class="row"><button id="bt">📸 Terminei a garrafinha</button></div>
       <p class="mut" style="margin:6px 0 0">Tire uma foto com a garrafinha de cabeça para baixo para valer.</p>
@@ -69,7 +99,7 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
       <div class="row"><button class="alt" id="undo">Desfazer último</button><button class="alt" id="custom">Outro valor</button></div>
       <label for="bottle" class="mut" style="display:block;margin-top:12px">Tamanho da sua garrafinha (ml)</label>
       <div class="row"><input id="bottle" type="number" min="50" max="5000" step="50" inputmode="numeric" style="margin-top:0"><button class="alt" id="saveBottle" style="flex:0 0 100px">Salvar</button></div>
-      <div class="row"><button class="alt" id="logout">Sair</button></div>
+      <div class="row"><button class="alt" id="logout">Sair da conta</button></div>
     </div>
 
     <div class="card">
@@ -96,6 +126,13 @@ const REQUIRE_PHOTO_ALL = false; // true = exige foto também nos botões +200/+
 // ==========================
 
 const $ = id => document.getElementById(id);
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+const lsDel = k => { try { localStorage.removeItem(k); } catch (e) {} };
+const note = (t, ok) => { const n = $("note"); n.textContent = t || ""; n.className = ok ? "ok" : ""; };
+window.addEventListener("error", e => note("Erro: " + (e.message || "desconhecido")));
+window.addEventListener("unhandledrejection", e => note("Erro: " + ((e.reason && e.reason.message) || "desconhecido")));
+
 let sb = null, configError = "";
 if (!/^https:\/\/[a-z0-9]+\.supabase\.co\/?$/i.test(SUPABASE_URL.trim())) {
   configError = "A SUPABASE_URL parece errada. Ela deve ser parecida com https://abcdxyz.supabase.co (a Project URL, sem nada depois).";
@@ -107,25 +144,29 @@ if (!/^https:\/\/[a-z0-9]+\.supabase\.co\/?$/i.test(SUPABASE_URL.trim())) {
   try { sb = supabase.createClient(SUPABASE_URL.trim(), SUPABASE_ANON_KEY.trim()); }
   catch (e) { configError = "Erro ao iniciar o Supabase: " + (e && e.message ? e.message : e); }
 }
+
 const pad = n => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
 
 let day = today(), me = null, myName = "", logs = [], pending = 500, started = null, signup = false, channel = null;
-let bottle = 500;
-try { bottle = parseInt(localStorage.getItem("agua-bottle"), 10) || 500; } catch (e) {}
+let myGroups = [], group = null;
+let bottle = parseInt(lsGet("agua-bottle"), 10) || 500;
 
 $("date").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
-const note = t => { $("note").textContent = t || ""; };
-window.addEventListener("error", e => note("Erro: " + (e.message || "desconhecido")));
-window.addEventListener("unhandledrejection", e => note("Erro: " + ((e.reason && e.reason.message) || "desconhecido")));
+
+// convite pelo link (?convite=CODIGO): guarda até a pessoa entrar/criar conta
+const inviteParam = (new URLSearchParams(location.search).get("convite") || "").trim().toLowerCase();
+if (inviteParam) lsSet("agua-invite", inviteParam);
+
+function screen(name) {
+  ["auth", "groups", "app"].forEach(s => $(s).hidden = s !== name);
+}
 
 // ---------- Login ----------
-const inviteParam = (new URLSearchParams(location.search).get("convite") || "").trim();
 function setMode(isSignup) {
   signup = isSignup;
   $("authTitle").textContent = isSignup ? "Criar conta" : "Entrar";
   $("aName").hidden = !isSignup;
-  $("aInvite").hidden = !isSignup;
   $("aGo").textContent = isSignup ? "Criar conta" : "Entrar";
   $("aSwitch").textContent = isSignup ? "Já tenho conta" : "Não tenho conta";
   $("aPass").autocomplete = isSignup ? "new-password" : "current-password";
@@ -134,70 +175,150 @@ function setMode(isSignup) {
 $("aSwitch").onclick = () => setMode(!signup);
 
 $("aGo").onclick = async () => {
-  const email = $("aEmail").value.trim(), pass = $("aPass").value, name = $("aName").value.trim(), invite = $("aInvite").value.trim();
-  if (!email || pass.length < 6 || (signup && (!name || !invite))) { $("aMsg").textContent = "Preencha tudo, inclusive o código do convite (senha com 6+ caracteres)."; return; }
+  const email = $("aEmail").value.trim(), pass = $("aPass").value, name = $("aName").value.trim();
+  if (!email || pass.length < 6 || (signup && !name)) { $("aMsg").textContent = "Preencha tudo (senha com 6+ caracteres)."; return; }
   $("aGo").disabled = true; $("aMsg").textContent = "";
   try {
     if (signup) {
-      const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: { name, invite } } });
+      const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: { name } } });
       if (error) throw error;
       if (!data.session) $("aMsg").textContent = "Conta criada! Confirme pelo e-mail que enviamos e depois entre.";
     } else {
       const { error } = await sb.auth.signInWithPassword({ email, password: pass });
       if (error) throw error;
     }
-  } catch (e) {
-    const m = e.message || "";
-    $("aMsg").textContent = /database error saving new user|convite/i.test(m)
-      ? "Código de convite inválido. Peça o link atualizado a quem organiza o desafio."
-      : (m || "Erro ao entrar.");
-  }
+  } catch (e) { $("aMsg").textContent = e.message || "Erro ao entrar."; }
   $("aGo").disabled = false;
 };
 
-$("logout").onclick = () => sb.auth.signOut();
+const logout = () => sb.auth.signOut();
+$("logout").onclick = logout; $("logout2").onclick = logout;
 
 function showAuth() {
-  started = null;
+  started = null; group = null; myGroups = [];
   if (channel) { sb.removeChannel(channel); channel = null; }
-  $("app").hidden = true; $("auth").hidden = false;
-  setMode(!!inviteParam);
-  if (inviteParam) { $("aInvite").value = inviteParam; $("aMsg").textContent = "Você foi convidado! Crie sua conta para entrar no desafio."; }
+  screen("auth");
+  const hasInvite = !!lsGet("agua-invite");
+  setMode(hasInvite);
+  if (hasInvite) $("aMsg").textContent = "Você foi convidado! Crie sua conta (ou entre, se já tiver) para participar do grupo.";
 }
 
 if (sb) sb.auth.onAuthStateChange((_ev, session) => {
   if (session && session.user) {
     if (started === session.user.id) return;
     me = session.user; started = me.id;
-    setTimeout(startApp, 0); // evita chamar o Supabase dentro do callback de auth
+    setTimeout(afterLogin, 0); // evita chamar o Supabase dentro do callback de auth
   } else { me = null; showAuth(); }
 });
 
-// ---------- App ----------
-async function startApp() {
-  $("auth").hidden = true; $("app").hidden = false;
+// ---------- Grupos ----------
+async function afterLogin() {
   const { data } = await sb.from("profiles").select("name").eq("id", me.id).maybeSingle();
   myName = (data && data.name) || me.email.split("@")[0];
-  $("who").textContent = "Olá, " + myName + "! Quanto você bebeu?";
-  $("bottle").value = bottle; refreshBottleLabel();
-  await load();
-  channel = sb.channel("logs-live").on("postgres_changes", { event: "*", schema: "public", table: "logs" }, load).subscribe();
+  await usePendingInvite();
+  await loadGroups();
+  const saved = lsGet("agua-group");
+  const g = myGroups.find(x => x.id === saved) || (myGroups.length === 1 ? myGroups[0] : null);
+  if (g) openGroup(g); else showGroups();
 }
 
+async function usePendingInvite() {
+  const code = lsGet("agua-invite");
+  if (!code) return;
+  const { data, error } = await sb.rpc("join_group", { code });
+  lsDel("agua-invite");
+  try { history.replaceState(null, "", location.pathname); } catch (e) {}
+  if (error) { note("Esse convite não é válido (ou foi trocado). Peça um link novo."); return; }
+  lsSet("agua-group", data.id);
+}
+
+async function loadGroups() {
+  const { data, error } = await sb.from("members").select("groups(id,name,invite_code,owner_id)").eq("user_id", me.id);
+  if (error) { note("Erro ao carregar grupos: " + error.message); return; }
+  myGroups = (data || []).map(r => r.groups).filter(Boolean);
+}
+
+function showGroups() {
+  group = null;
+  if (channel) { sb.removeChannel(channel); channel = null; }
+  screen("groups");
+  const list = $("gList"); list.textContent = "";
+  $("gListCard").hidden = !myGroups.length;
+  myGroups.forEach(g => {
+    const b = document.createElement("button"); b.className = "alt gitem"; b.textContent = g.name;
+    b.onclick = () => openGroup(g); list.appendChild(b);
+  });
+}
+
+$("gCreate").onclick = async () => {
+  const name = $("gName").value.trim();
+  if (!name) { note("Dê um nome ao grupo."); return; }
+  $("gCreate").disabled = true;
+  const { data, error } = await sb.rpc("create_group", { gname: name });
+  $("gCreate").disabled = false;
+  if (error) { note("Não consegui criar o grupo: " + error.message); return; }
+  note(""); $("gName").value = ""; myGroups.push(data); openGroup(data, true);
+};
+
+$("gJoin").onclick = async () => {
+  const code = $("gCode").value.trim().toLowerCase();
+  if (!code) { note("Digite o código do convite."); return; }
+  const { data, error } = await sb.rpc("join_group", { code });
+  if (error) { note("Código inválido. Confira com quem te convidou."); return; }
+  note(""); $("gCode").value = "";
+  await loadGroups(); openGroup(myGroups.find(x => x.id === data.id) || data);
+};
+
+$("switchGroup").onclick = showGroups;
+
+function inviteUrl() { return location.origin + location.pathname + "?convite=" + group.invite_code; }
+
+$("invite").onclick = () => {
+  const box = $("invBox"); box.hidden = !box.hidden;
+  $("invLink").textContent = inviteUrl();
+  $("invNew").hidden = group.owner_id !== me.id;
+};
+$("invShare").onclick = async () => {
+  const url = inviteUrl(), text = "Entra no meu grupo do Desafio da Água: " + group.name;
+  try {
+    if (navigator.share) { await navigator.share({ title: "Desafio da Água", text, url }); return; }
+    await navigator.clipboard.writeText(url); note("Link copiado! Cole numa conversa.", true);
+  } catch (e) { note("Copie o link manualmente: " + url); }
+};
+$("invNew").onclick = async () => {
+  if (!confirm("Gerar um novo código? O link antigo deixa de funcionar.")) return;
+  const { data, error } = await sb.rpc("regenerate_invite", { gid: group.id });
+  if (error) { note("Não consegui gerar o código: " + error.message); return; }
+  group.invite_code = data; $("invLink").textContent = inviteUrl(); note("Novo link gerado.", true);
+};
+
+function openGroup(g) {
+  group = g; lsSet("agua-group", g.id); logs = []; note("");
+  screen("app"); $("invBox").hidden = true;
+  $("gTitle").textContent = g.name; $("who").textContent = myName;
+  $("bottle").value = bottle; refreshBottleLabel();
+  if (channel) sb.removeChannel(channel);
+  channel = sb.channel("logs-" + g.id)
+    .on("postgres_changes", { event: "*", schema: "public", table: "logs", filter: "group_id=eq." + g.id }, load)
+    .subscribe();
+  render(); load();
+}
+
+// ---------- Placar ----------
 function refreshBottleLabel() { $("bt").textContent = "📸 Terminei a garrafinha (" + bottle + " ml)"; }
 
 async function load() {
-  if (!me) return;
-  const d = today(); if (d !== day) day = d;
+  if (!me || !group) return;
+  const gid = group.id, d = today(); if (d !== day) day = d;
   const { data, error } = await sb.from("logs")
     .select("id,user_id,ml,photo_path,created_at,profiles(name)")
-    .eq("day", day).order("created_at", { ascending: false });
+    .eq("group_id", gid).eq("day", day).order("created_at", { ascending: false });
   if (error) { note("Erro ao carregar: " + error.message); return; }
+  if (!group || group.id !== gid) return; // trocou de grupo no meio do caminho
   note(""); logs = data || []; render();
 }
 
 function render() {
-  // placar
   const tot = {};
   logs.forEach(l => {
     const t = tot[l.user_id] || (tot[l.user_id] = { name: (l.profiles && l.profiles.name) || "?", ml: 0 });
@@ -221,15 +342,13 @@ function render() {
   });
   $("mine").textContent = logs.filter(l => l.user_id === me.id).reduce((s, l) => s + l.ml, 0) + " ml";
 
-  // provas
   const box = $("proofs"); box.textContent = "";
   const shots = logs.filter(l => l.photo_path).slice(0, 12);
   if (!shots.length) { const e = document.createElement("p"); e.className = "mut"; e.textContent = "Nenhuma prova ainda."; box.appendChild(e); }
   shots.forEach(l => {
     const f = document.createElement("figure"); f.className = "pf";
     const im = document.createElement("img");
-    im.alt = "Prova de " + ((l.profiles && l.profiles.name) || "");
-    im.loading = "lazy";
+    im.alt = "Prova de " + ((l.profiles && l.profiles.name) || ""); im.loading = "lazy";
     im.src = sb.storage.from("proofs").getPublicUrl(l.photo_path).data.publicUrl;
     const cap = document.createElement("figcaption");
     cap.textContent = ((l.profiles && l.profiles.name) || "?") + " · " + l.ml + " ml · " +
@@ -238,6 +357,7 @@ function render() {
   });
 }
 
+// ---------- Registros ----------
 function shrink(file) {
   return new Promise((res, rej) => {
     const url = URL.createObjectURL(file), im = new Image();
@@ -253,19 +373,19 @@ function shrink(file) {
 }
 
 async function addLog(ml, blob) {
-  if (!me || !(ml > 0)) return;
+  if (!me || !group || !(ml > 0)) return;
   let path = null;
   if (blob) {
     path = me.id + "/" + Date.now() + ".jpg";
     const up = await sb.storage.from("proofs").upload(path, blob, { contentType: "image/jpeg" });
     if (up.error) { note("Não consegui enviar a foto: " + up.error.message); return; }
   }
-  const { error } = await sb.from("logs").insert({ ml, day, photo_path: path });
+  const { error } = await sb.from("logs").insert({ group_id: group.id, ml, day, photo_path: path });
   if (error) { note("Não consegui salvar: " + error.message); return; }
   await load();
 }
 
-function ask(ml) { // pede foto se necessário, senão registra direto
+function ask(ml) {
   if (REQUIRE_PHOTO_ALL) { pending = ml; $("shot").click(); } else addLog(ml, null);
 }
 
@@ -273,13 +393,13 @@ $("bt").onclick = () => { pending = bottle; $("shot").click(); };
 $("shot").onchange = async function () {
   const f = this.files && this.files[0]; this.value = "";
   if (!f) return;
-  try { note("Enviando…"); await addLog(pending, await shrink(f)); note(""); }
+  try { note("Enviando…", true); await addLog(pending, await shrink(f)); }
   catch (e) { note("Não consegui ler a foto. Tente de novo."); }
 };
 document.querySelectorAll("[data-ml]").forEach(btn => btn.onclick = () => ask(parseInt(btn.dataset.ml, 10)));
 $("custom").onclick = () => { const v = parseInt(prompt("Quantos ml?", "250"), 10); if (v > 0 && v <= 5000) ask(v); };
 $("undo").onclick = async () => {
-  const last = logs.find(l => l.user_id === me.id); // lista já vem do mais novo para o mais antigo
+  const last = logs.find(l => l.user_id === me.id); // lista vem do mais novo para o mais antigo
   if (!last) return;
   const { error } = await sb.from("logs").delete().eq("id", last.id);
   if (error) { note("Não consegui desfazer: " + error.message); return; }
@@ -288,11 +408,11 @@ $("undo").onclick = async () => {
 };
 $("saveBottle").onclick = () => {
   const v = parseInt($("bottle").value, 10);
-  if (v > 0) { bottle = Math.min(5000, Math.max(50, v)); try { localStorage.setItem("agua-bottle", String(bottle)); } catch (e) {} }
+  if (v > 0) { bottle = Math.min(5000, Math.max(50, v)); lsSet("agua-bottle", String(bottle)); }
   $("bottle").value = bottle; refreshBottleLabel();
 };
 
-// atualiza placar de tempos em tempos (e vira o dia sozinho)
+// atualiza o placar de tempos em tempos (e vira o dia sozinho)
 setInterval(load, 30000);
 
 // ---------- App instalável (PWA) ----------
