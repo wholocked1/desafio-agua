@@ -49,6 +49,7 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
   <section id="auth" class="card" hidden>
     <strong id="authTitle">Entrar</strong>
     <input id="aName" maxlength="30" placeholder="Seu nome (para o placar)" autocomplete="nickname" hidden>
+    <input id="aInvite" maxlength="40" placeholder="Código do convite" autocomplete="off" autocapitalize="off" hidden>
     <input id="aEmail" type="email" placeholder="E-mail" autocomplete="email">
     <input id="aPass" type="password" placeholder="Senha (mín. 6 caracteres)" autocomplete="current-password">
     <div class="row"><button id="aGo">Entrar</button></div>
@@ -85,7 +86,7 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
   <p id="note"></p>
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
 <script>
 // ====== CONFIGURAÇÃO ======
 const SUPABASE_URL = "https://nwiqiaqeiwmvkylcjwrb.supabase.co";       // ex.: https://abcdxyz.supabase.co
@@ -94,8 +95,18 @@ const GOAL = 2000;               // meta diária em ml
 const REQUIRE_PHOTO_ALL = false; // true = exige foto também nos botões +200/+300/+500/Outro valor
 // ==========================
 
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = id => document.getElementById(id);
+let sb = null, configError = "";
+if (!/^https:\/\/[a-z0-9]+\.supabase\.co\/?$/i.test(SUPABASE_URL.trim())) {
+  configError = "A SUPABASE_URL parece errada. Ela deve ser parecida com https://abcdxyz.supabase.co (a Project URL, sem nada depois).";
+} else if (SUPABASE_ANON_KEY.trim().length < 20 || /COLE_AQUI/.test(SUPABASE_ANON_KEY)) {
+  configError = "A SUPABASE_ANON_KEY parece errada ou vazia. Cole a chave publishable (sb_publishable_...) ou a anon.";
+} else if (typeof supabase === "undefined") {
+  configError = "Não consegui carregar a biblioteca do Supabase. Verifique a internet ou desative bloqueadores de anúncios.";
+} else {
+  try { sb = supabase.createClient(SUPABASE_URL.trim(), SUPABASE_ANON_KEY.trim()); }
+  catch (e) { configError = "Erro ao iniciar o Supabase: " + (e && e.message ? e.message : e); }
+}
 const pad = n => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
 
@@ -105,12 +116,16 @@ try { bottle = parseInt(localStorage.getItem("agua-bottle"), 10) || 500; } catch
 
 $("date").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
 const note = t => { $("note").textContent = t || ""; };
+window.addEventListener("error", e => note("Erro: " + (e.message || "desconhecido")));
+window.addEventListener("unhandledrejection", e => note("Erro: " + ((e.reason && e.reason.message) || "desconhecido")));
 
 // ---------- Login ----------
+const inviteParam = (new URLSearchParams(location.search).get("convite") || "").trim();
 function setMode(isSignup) {
   signup = isSignup;
   $("authTitle").textContent = isSignup ? "Criar conta" : "Entrar";
   $("aName").hidden = !isSignup;
+  $("aInvite").hidden = !isSignup;
   $("aGo").textContent = isSignup ? "Criar conta" : "Entrar";
   $("aSwitch").textContent = isSignup ? "Já tenho conta" : "Não tenho conta";
   $("aPass").autocomplete = isSignup ? "new-password" : "current-password";
@@ -119,19 +134,24 @@ function setMode(isSignup) {
 $("aSwitch").onclick = () => setMode(!signup);
 
 $("aGo").onclick = async () => {
-  const email = $("aEmail").value.trim(), pass = $("aPass").value, name = $("aName").value.trim();
-  if (!email || pass.length < 6 || (signup && !name)) { $("aMsg").textContent = "Preencha tudo (senha com 6+ caracteres)."; return; }
+  const email = $("aEmail").value.trim(), pass = $("aPass").value, name = $("aName").value.trim(), invite = $("aInvite").value.trim();
+  if (!email || pass.length < 6 || (signup && (!name || !invite))) { $("aMsg").textContent = "Preencha tudo, inclusive o código do convite (senha com 6+ caracteres)."; return; }
   $("aGo").disabled = true; $("aMsg").textContent = "";
   try {
     if (signup) {
-      const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: { name } } });
+      const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: { name, invite } } });
       if (error) throw error;
       if (!data.session) $("aMsg").textContent = "Conta criada! Confirme pelo e-mail que enviamos e depois entre.";
     } else {
       const { error } = await sb.auth.signInWithPassword({ email, password: pass });
       if (error) throw error;
     }
-  } catch (e) { $("aMsg").textContent = e.message || "Erro ao entrar."; }
+  } catch (e) {
+    const m = e.message || "";
+    $("aMsg").textContent = /database error saving new user|convite/i.test(m)
+      ? "Código de convite inválido. Peça o link atualizado a quem organiza o desafio."
+      : (m || "Erro ao entrar.");
+  }
   $("aGo").disabled = false;
 };
 
@@ -140,10 +160,12 @@ $("logout").onclick = () => sb.auth.signOut();
 function showAuth() {
   started = null;
   if (channel) { sb.removeChannel(channel); channel = null; }
-  $("app").hidden = true; $("auth").hidden = false; setMode(false);
+  $("app").hidden = true; $("auth").hidden = false;
+  setMode(!!inviteParam);
+  if (inviteParam) { $("aInvite").value = inviteParam; $("aMsg").textContent = "Você foi convidado! Crie sua conta para entrar no desafio."; }
 }
 
-sb.auth.onAuthStateChange((_ev, session) => {
+if (sb) sb.auth.onAuthStateChange((_ev, session) => {
   if (session && session.user) {
     if (started === session.user.id) return;
     me = session.user; started = me.id;
@@ -279,8 +301,8 @@ if ("serviceWorker" in navigator) {
 }
 
 // ---------- Início ----------
-if (SUPABASE_URL.startsWith("COLE_AQUI")) {
-  note("Falta configurar SUPABASE_URL e SUPABASE_ANON_KEY no topo do script do index.html.");
+if (configError) {
+  note(configError);
 } else {
   sb.auth.getSession().then(({ data }) => { if (!data.session) showAuth(); });
 }
