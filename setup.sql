@@ -181,3 +181,81 @@ language sql stable security invoker set search_path = public as $$
 $$;
 revoke execute on function public.group_totals(uuid, date) from public, anon;
 grant execute on function public.group_totals(uuid, date) to authenticated;
+
+-- ========== 9) Reações nas fotos e moderação do dono ==========
+-- ========== Funções auxiliares ==========
+create or replace function public.log_in_my_group(lid bigint) returns boolean
+language sql security definer stable set search_path = public as $$
+  select exists (
+    select 1 from public.logs l join public.members m on m.group_id = l.group_id
+     where l.id = lid and m.user_id = auth.uid()
+  )
+$$;
+
+create or replace function public.is_owner(gid uuid) returns boolean
+language sql security definer stable set search_path = public as $$
+  select exists (select 1 from public.groups where id = gid and owner_id = auth.uid())
+$$;
+
+-- a foto pertence a um registro de um grupo do qual eu sou dono?
+create or replace function public.can_mod_photo(path text) returns boolean
+language sql security definer stable set search_path = public as $$
+  select exists (
+    select 1 from public.logs l join public.groups g on g.id = l.group_id
+     where l.photo_path = path and g.owner_id = auth.uid()
+  )
+$$;
+
+-- ========== Reações ==========
+create table if not exists public.reactions (
+  log_id bigint not null references public.logs(id) on delete cascade,
+  user_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  emoji text not null check (emoji in ('👏', '💦', '🔥', '😂')),
+  created_at timestamptz not null default now(),
+  primary key (log_id, user_id, emoji)
+);
+create index if not exists reactions_log_idx on public.reactions(log_id);
+alter table public.reactions enable row level security;
+
+drop policy if exists "ver reacoes do grupo" on public.reactions;
+create policy "ver reacoes do grupo" on public.reactions
+  for select to authenticated using (public.log_in_my_group(log_id));
+drop policy if exists "reagir" on public.reactions;
+create policy "reagir" on public.reactions
+  for insert to authenticated with check (user_id = auth.uid() and public.log_in_my_group(log_id));
+drop policy if exists "tirar propria reacao" on public.reactions;
+create policy "tirar propria reacao" on public.reactions
+  for delete to authenticated using (user_id = auth.uid());
+
+-- ========== Moderação ==========
+-- Apagar registro: o próprio, ou qualquer um do grupo se você for o dono
+drop policy if exists "apagar proprio registro" on public.logs;
+drop policy if exists "apagar registro" on public.logs;
+create policy "apagar registro" on public.logs
+  for delete to authenticated using (user_id = auth.uid() or public.is_owner(group_id));
+
+-- O dono pode apagar a foto de um registro do grupo (antes de apagar o registro)
+drop policy if exists "dono do grupo apaga foto" on storage.objects;
+create policy "dono do grupo apaga foto" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'proofs' and public.can_mod_photo(name));
+
+-- Remover um membro: apaga os registros e as reações dele no grupo e tira do grupo.
+-- (O app apaga as fotos antes de chamar esta função.)
+create or replace function public.remove_member(gid uuid, uid uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.groups where id = gid and owner_id = auth.uid()) then
+    raise exception 'sem_permissao';
+  end if;
+  if uid = auth.uid() then raise exception 'use_sair_do_grupo'; end if;
+  delete from public.reactions r using public.logs l
+   where r.log_id = l.id and l.group_id = gid and r.user_id = uid;
+  delete from public.logs where group_id = gid and user_id = uid;
+  delete from public.members where group_id = gid and user_id = uid;
+end $$;
+
+revoke execute on function public.log_in_my_group(bigint), public.is_owner(uuid), public.can_mod_photo(text),
+  public.remove_member(uuid, uuid) from public, anon;
+grant execute on function public.log_in_my_group(bigint), public.is_owner(uuid), public.can_mod_photo(text),
+  public.remove_member(uuid, uuid) to authenticated;

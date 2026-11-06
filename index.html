@@ -36,6 +36,7 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
 .mut{color:var(--mut);font-size:.85rem}
 #note{color:#d6453d;font-size:.85rem;text-align:center;min-height:1.2em}
 #note.ok{color:var(--ac)}
+.chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.chip{padding:3px 7px;font-size:.78rem;border-radius:999px;background:transparent;color:var(--tx);border:1px solid var(--bd);font-weight:500}.chip.on{background:var(--ac2);border-color:var(--ac)}.chip.danger{color:#d6453d}
 .tabs{display:flex;gap:6px;margin-top:10px}.tabs button{flex:1;padding:8px 6px;background:transparent;color:var(--ac);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
 .gitem{width:100%;text-align:left;margin-top:8px}
 .code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px;margin-top:8px;font-size:.85rem}
@@ -188,7 +189,7 @@ const pad = n => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
 
 let day = today(), me = null, myName = "", myGoal = GOAL, winnerKey = "", logs = [], pending = 500, started = null, signup = false, channel = null;
-let myGroups = [], group = null, members = [], hist = [], period = "day", histKey = "";
+let myGroups = [], group = null, members = [], reacts = {}, openLogs = {}, hist = [], period = "day", histKey = "";
 let bottle = parseInt(lsGet("agua-bottle"), 10) || 500;
 
 $("date").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
@@ -340,7 +341,7 @@ $("invNew").onclick = async () => {
 };
 
 function openGroup(g) {
-  group = g; lsSet("agua-group", g.id); logs = []; members = []; hist = []; histKey = ""; $("membersCard").hidden = true; note("");
+  group = g; lsSet("agua-group", g.id); logs = []; members = []; reacts = {}; openLogs = {}; hist = []; histKey = ""; $("membersCard").hidden = true; note("");
   screen("app"); $("invBox").hidden = true;
   $("gTitle").textContent = g.name; $("who").textContent = myName;
   $("goal").value = myGoal; $("winner").hidden = true; winnerKey = "";
@@ -363,7 +364,7 @@ async function load() {
     .eq("group_id", gid).eq("day", day).order("created_at", { ascending: false });
   if (error) { note("Erro ao carregar: " + error.message); return; }
   if (!group || group.id !== gid) return; // trocou de grupo no meio do caminho
-  note(""); logs = data || []; render(); loadMembers(); loadWinner(); loadHistory();
+  note(""); logs = data || []; render(); loadMembers(); loadWinner(); loadHistory(); loadReactions();
 }
 
 const signed = {};
@@ -473,7 +474,20 @@ function render() {
     const cap = document.createElement("figcaption");
     cap.textContent = ((l.profiles && l.profiles.name) || "?") + " · " + l.ml + " ml · " +
       new Date(l.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    f.append(im, cap); box.appendChild(f);
+    const chips = document.createElement("div"); chips.className = "chips";
+    const rs = reacts[l.id] || [];
+    EMOJIS.forEach(e => {
+      const n = rs.filter(r => r.emoji === e).length, mine = rs.some(r => r.emoji === e && r.user_id === me.id);
+      const bt = document.createElement("button"); bt.className = "chip" + (mine ? " on" : "");
+      bt.textContent = e + (n ? " " + n : ""); bt.title = mine ? "Tirar reação" : "Reagir";
+      bt.onclick = () => toggleReact(l.id, e, mine);
+      chips.appendChild(bt);
+    });
+    if (l.user_id === me.id || group.owner_id === me.id) {
+      const del = document.createElement("button"); del.className = "chip danger"; del.textContent = "🗑️"; del.title = "Remover registro";
+      del.onclick = () => removeLog(l); chips.appendChild(del);
+    }
+    f.append(im, cap, chips); box.appendChild(f);
   });
   renderMembers();
 }
@@ -571,6 +585,56 @@ $("saveName").onclick = async () => {
   myName = v; note("Nome salvo!", true);
 };
 
+// ---------- Reações e moderação ----------
+const EMOJIS = ["👏", "💦", "🔥", "😂"];
+
+async function loadReactions() {
+  if (!me || !group) return;
+  const gid = group.id, ids = logs.filter(l => l.photo_path).slice(0, 12).map(l => l.id);
+  if (!ids.length) { reacts = {}; return; }
+  const { data, error } = await sb.from("reactions").select("log_id,user_id,emoji").in("log_id", ids);
+  if (error || !group || group.id !== gid) return;
+  const r = {}; (data || []).forEach(x => (r[x.log_id] || (r[x.log_id] = [])).push(x));
+  reacts = r; render();
+}
+
+async function toggleReact(logId, emoji, mine) {
+  const list = reacts[logId] || (reacts[logId] = []);
+  if (mine) {
+    const { error } = await sb.from("reactions").delete().eq("log_id", logId).eq("user_id", me.id).eq("emoji", emoji);
+    if (error) { note("Não consegui tirar a reação."); return; }
+    reacts[logId] = list.filter(x => !(x.emoji === emoji && x.user_id === me.id));
+  } else {
+    const { error } = await sb.from("reactions").insert({ log_id: logId, emoji });
+    if (error) { note("Não consegui reagir."); return; }
+    list.push({ log_id: logId, user_id: me.id, emoji });
+  }
+  render();
+}
+
+async function removeLog(l) {
+  const who = l.user_id === me.id ? "seu registro" : "o registro de " + (((l.profiles && l.profiles.name)) || "outra pessoa");
+  if (!confirm("Remover " + who + " de " + l.ml + " ml" + (l.photo_path ? " (e a foto)" : "") + "?")) return;
+  if (l.photo_path) await sb.storage.from("proofs").remove([l.photo_path]); // a foto sai antes do registro
+  const { error } = await sb.from("logs").delete().eq("id", l.id);
+  if (error) { note("Não consegui remover: " + error.message); return; }
+  note("Registro removido.", true); await load();
+}
+
+async function removeMember(m) {
+  const name = (m.profiles && m.profiles.name) || "esta pessoa";
+  if (!confirm("Remover " + name + " do grupo?\n\nTodos os registros, fotos e reações dela neste grupo serão apagados. Para ela não voltar com o mesmo link, gere um novo código de convite depois.")) return;
+  const gid = group.id;
+  note("Removendo…", true);
+  const { data: ph } = await sb.from("logs").select("photo_path").eq("group_id", gid).eq("user_id", m.user_id).not("photo_path", "is", null);
+  const paths = (ph || []).map(x => x.photo_path);
+  for (let i = 0; i < paths.length; i += 100) await sb.storage.from("proofs").remove(paths.slice(i, i + 100));
+  const { error } = await sb.rpc("remove_member", { gid, uid: m.user_id });
+  if (error) { note("Não consegui remover: " + error.message); return; }
+  members = members.filter(x => x.user_id !== m.user_id);
+  note(name + " foi removido(a) do grupo.", true); await load();
+}
+
 // ---------- Membros ----------
 async function loadMembers() {
   if (!me || !group) return;
@@ -604,7 +668,29 @@ function renderMembers() {
       nm.append(a, c);
       const sub = document.createElement("div"); sub.className = "mut";
       sub.textContent = "No grupo desde " + new Date(m.joined_at).toLocaleDateString("pt-BR");
-      mid.append(nm, sub); row.appendChild(mid); box.appendChild(row);
+      mid.append(nm, sub);
+      if (group.owner_id === me.id && m.user_id !== me.id) {
+        const mine = logs.filter(l => l.user_id === m.user_id);
+        const acts = document.createElement("div"); acts.className = "chips";
+        if (mine.length) {
+          const t = document.createElement("button"); t.className = "chip";
+          t.textContent = (openLogs[m.user_id] ? "Esconder" : "Registros de hoje") + " (" + mine.length + ")";
+          t.onclick = () => { openLogs[m.user_id] = !openLogs[m.user_id]; renderMembers(); };
+          acts.appendChild(t);
+        }
+        const rm = document.createElement("button"); rm.className = "chip danger"; rm.textContent = "Remover do grupo";
+        rm.onclick = () => removeMember(m); acts.appendChild(rm);
+        mid.appendChild(acts);
+        if (openLogs[m.user_id]) mine.forEach(l => {
+          const li = document.createElement("div"); li.className = "nm mut"; li.style.marginTop = "4px";
+          const tx = document.createElement("span");
+          tx.textContent = new Date(l.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) + " · " + l.ml + " ml" + (l.photo_path ? " · 📸" : "");
+          const del = document.createElement("button"); del.className = "chip danger"; del.textContent = "🗑️ Remover";
+          del.onclick = () => removeLog(l);
+          li.append(tx, del); mid.appendChild(li);
+        });
+      }
+      row.appendChild(mid); box.appendChild(row);
     });
 }
 
