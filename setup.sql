@@ -259,3 +259,87 @@ revoke execute on function public.log_in_my_group(bigint), public.is_owner(uuid)
   public.remove_member(uuid, uuid) from public, anon;
 grant execute on function public.log_in_my_group(bigint), public.is_owner(uuid), public.can_mod_photo(text),
   public.remove_member(uuid, uuid) to authenticated;
+
+-- ========== 10) Histórico e conquistas do Perfil ==========
+create or replace function public.my_daily_totals()
+returns table (day date, ml int, photos int)
+language sql stable security invoker set search_path = public as $$
+  select l.day, sum(l.ml)::int, count(l.photo_path)::int
+    from public.logs l
+   where l.user_id = auth.uid()
+   group by l.day
+$$;
+
+revoke execute on function public.my_daily_totals() from public, anon;
+grant execute on function public.my_daily_totals() to authenticated;
+
+-- ========== 11) Notificações (e-mail e lembretes) ==========
+-- ========== Preferências no perfil ==========
+alter table public.profiles
+  add column if not exists email_freq text not null default 'none'
+    check (email_freq in ('none', 'weekly', 'monthly', 'both')),
+  add column if not exists reminder_every int not null default 0
+    check (reminder_every in (0, 2, 3)),
+  add column if not exists test_email_at timestamptz;
+
+-- ========== Inscrições de notificação (um registro por aparelho) ==========
+create table if not exists public.push_subscriptions (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user_idx on public.push_subscriptions(user_id);
+alter table public.push_subscriptions enable row level security;
+
+drop policy if exists "ver proprias inscricoes" on public.push_subscriptions;
+create policy "ver proprias inscricoes" on public.push_subscriptions
+  for select to authenticated using (user_id = auth.uid());
+drop policy if exists "apagar proprias inscricoes" on public.push_subscriptions;
+create policy "apagar proprias inscricoes" on public.push_subscriptions
+  for delete to authenticated using (user_id = auth.uid());
+
+-- Salvar a inscrição deste aparelho. Se o aparelho já estava ligado a outra conta, passa para a conta atual.
+create or replace function public.save_push_subscription(p_endpoint text, p_p256dh text, p_auth text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'nao_logado'; end if;
+  if p_endpoint !~ '^https://' or char_length(p_endpoint) > 1000 then raise exception 'inscricao_invalida'; end if;
+  insert into public.push_subscriptions (user_id, endpoint, p256dh, auth)
+  values (auth.uid(), p_endpoint, p_p256dh, p_auth)
+  on conflict (endpoint) do update
+    set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, created_at = now();
+end $$;
+
+revoke execute on function public.save_push_subscription(text, text, text) from public, anon;
+grant execute on function public.save_push_subscription(text, text, text) to authenticated;
+
+-- ========== Segredo do agendamento ==========
+-- Um código aleatório guardado no cofre (Vault) do Supabase. O agendamento manda esse código
+-- para a função de envio, e a função confere aqui. Ninguém precisa copiar nada.
+do $$ begin
+  if not exists (select 1 from vault.secrets where name = 'notify_cron_secret') then
+    perform vault.create_secret(encode(extensions.gen_random_bytes(24), 'hex'), 'notify_cron_secret');
+  end if;
+end $$;
+
+create or replace function public.check_cron_secret(s text) returns boolean
+language sql security definer stable set search_path = public as $$
+  select exists (select 1 from vault.decrypted_secrets where name = 'notify_cron_secret' and decrypted_secret = s)
+$$;
+revoke execute on function public.check_cron_secret(text) from public, anon, authenticated;
+grant execute on function public.check_cron_secret(text) to service_role;
+
+-- ========== 12) Registro (log) dos envios ==========
+create table if not exists public.notify_log (
+  id bigint generated always as identity primary key,
+  created_at timestamptz not null default now(),
+  kind text not null,          -- weekly, monthly, reminder, test-email, test-push, auth...
+  status text not null,        -- info, ok, erro
+  detail text,
+  user_id uuid
+);
+create index if not exists notify_log_created_idx on public.notify_log(created_at desc);
+alter table public.notify_log enable row level security;

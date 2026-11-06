@@ -198,14 +198,16 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
+<script src="/config.js"></script>
 <script>
-// ====== CONFIGURAÇÃO ======
-const SUPABASE_URL = "https://nwiqiaqeiwmvkylcjwrb.supabase.co";       // ex.: https://abcdxyz.supabase.co
-const SUPABASE_ANON_KEY = "sb_publishable_AUg94ROop6o5h3387WoKmQ_u_STvhdf";     // chave "anon" / "publishable" (pública por design)
-const GOAL = 2000;               // meta diária em ml
-const REQUIRE_PHOTO_ALL = false; // true = exige foto também nos botões +200/+300/+500/Outro valor
-const VAPID_PUBLIC_KEY = "BBVhevWiQF2Yt2XzBkNkJbeeSkf7DzFAw4dAbWsJFLWKlVIm4VrBNFuhostPlbCUH_VpMjKhviHUNlMFId1Xpno"; // gerada no gerar-chaves-vapid.html (a pública, nunca a privada)
-// ==========================
+// ====== CONFIGURAÇÃO: fica no config.js (não edite aqui) ======
+const CFG = window.APP_CONFIG || {};
+const SUPABASE_URL = String(CFG.SUPABASE_URL || "COLE_AQUI_A_PROJECT_URL");
+const SUPABASE_ANON_KEY = String(CFG.SUPABASE_ANON_KEY || "COLE_AQUI_A_ANON_KEY");
+const VAPID_PUBLIC_KEY = String(CFG.VAPID_PUBLIC_KEY || "COLE_AQUI_A_CHAVE_PUBLICA_VAPID");
+const GOAL = parseInt(CFG.GOAL, 10) > 0 ? parseInt(CFG.GOAL, 10) : 2000;
+const REQUIRE_PHOTO_ALL = CFG.REQUIRE_PHOTO_ALL === true;
+// ==============================================================
 
 const $ = id => document.getElementById(id);
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
@@ -216,7 +218,9 @@ window.addEventListener("error", e => note("Erro: " + (e.message || "desconhecid
 window.addEventListener("unhandledrejection", e => note("Erro: " + ((e.reason && e.reason.message) || "desconhecido")));
 
 let sb = null, configError = "";
-if (!/^https:\/\/[a-z0-9]+\.supabase\.co\/?$/i.test(SUPABASE_URL.trim())) {
+if (!window.APP_CONFIG) {
+  configError = "Não encontrei o config.js. Envie o arquivo config.js (preenchido) junto com o index.html.";
+} else if (!/^https:\/\/[a-z0-9]+\.supabase\.co\/?$/i.test(SUPABASE_URL.trim())) {
   configError = "A SUPABASE_URL parece errada. Ela deve ser parecida com https://abcdxyz.supabase.co (a Project URL, sem nada depois).";
 } else if (SUPABASE_ANON_KEY.trim().length < 20 || /COLE_AQUI/.test(SUPABASE_ANON_KEY)) {
   configError = "A SUPABASE_ANON_KEY parece errada ou vazia. Cole a chave publishable (sb_publishable_...) ou a anon.";
@@ -727,7 +731,7 @@ function b64uToBytes(s) {
 }
 
 async function enablePush() {
-  if (!vapidReady()) throw new Error("Falta configurar a VAPID_PUBLIC_KEY no index.html.");
+  if (!vapidReady()) throw new Error("Falta preencher a VAPID_PUBLIC_KEY no config.js.");
   if (isIOS && !isStandalone) throw new Error("No iPhone, instale o app na Tela de Início e abra pelo ícone para ativar os lembretes.");
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw new Error("Este navegador não aceita notificações.");
   const perm = await Notification.requestPermission();
@@ -773,7 +777,11 @@ $("saveReminder").onclick = async () => {
 };
 
 $("testPush").onclick = async () => {
-  try { note("Enviando…", true); await callNotify("test-push"); note("Notificação enviada! Ela pode levar alguns segundos.", true); }
+  try {
+    note("A notificação chega em uns 5 segundos. Saia do app (volte para a Tela de Início) para ver o aviso.", true);
+    const r = await callNotify("test-push");
+    note("Enviada para " + r.sent + (r.sent === 1 ? " aparelho." : " aparelhos.") + " Se não apareceu, confira as permissões do app nos Ajustes.", true);
+  }
   catch (e) { note(e.message || String(e)); }
 };
 

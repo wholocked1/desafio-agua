@@ -5,14 +5,10 @@ Faça no computador, nesta ordem. Os nomes dos botões do Supabase podem variar 
 ## 1. Gerar as chaves das notificações
 1. Dê dois cliques no arquivo `gerar-chaves-vapid.html` (ele abre no navegador do seu computador).
 2. Clique em **Gerar chaves** e deixe a página aberta até terminar os passos 2 e 4.
-3. A **pública** vai no `index.html` e no Supabase. A **privada** vai só no Supabase.
+3. A **pública** vai no `config.js` e no Supabase. A **privada** vai só no Supabase.
 
 ## 2. Colocar a chave pública no app
-No `index.html`, perto das outras configurações, troque:
-```js
-const VAPID_PUBLIC_KEY = "COLE_AQUI_A_CHAVE_PUBLICA_VAPID";
-```
-pela chave **pública** (mantendo as aspas).
+No `config.js`, preencha `VAPID_PUBLIC_KEY` com a chave **pública** (mantendo as aspas).
 
 ## 3. Preparar o banco
 No **SQL Editor**, numa aba nova, cole só o `migracao-notificacoes.sql` e rode.
@@ -33,13 +29,17 @@ No **SQL Editor**, numa aba nova, cole só o `migracao-notificacoes.sql` e rode.
 | `APP_URL` | `https://desafio-agua-jbo9.vercel.app` |
 
 ## 5. Publicar o app
-Envie o `index.html` e o `sw.js` para o GitHub e espere o Vercel publicar.
+Envie o `index.html`, o `config.js` e o `sw.js` para o GitHub e espere o Vercel publicar.
 
 ## 6. Testar (antes de agendar)
 1. **E-mail:** no app, abra o **Perfil** e toque em **Me mandar um resumo**. Deve chegar um e-mail com o ranking desta semana até agora (confira o spam).
 2. **Lembretes:** no iPhone, abra o app **pelo ícone da Tela de Início**. No Perfil, escolha **A cada 2 horas**, toque em **Salvar** e permita as notificações. Depois toque em **Testar notificação**.
 
-Se aparecer erro, anote a mensagem do rodapé. Em **Edge Functions → notify → Logs** aparece o detalhe.
+Se aparecer erro, anote a mensagem do rodapé e consulte o registro no SQL Editor (precisa ter rodado o `migracao-log.sql`):
+```sql
+select created_at at time zone 'America/Sao_Paulo' as quando, kind, status, detail
+  from public.notify_log order by id desc limit 30;
+```
 
 ## 7. Agendar os envios
 1. Abra o `agendar-envios.sql` e troque `https://SEU-PROJETO.supabase.co` pela sua Project URL (a mesma do `index.html`).

@@ -1,7 +1,7 @@
 // Service worker simples: abre rápido e atualiza sozinho.
 // Só mexe em arquivos do próprio site; Supabase e fotos sempre vão direto à rede.
-const CACHE = "agua-v4";
-const SHELL = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
+const CACHE = "agua-v5";
+const SHELL = ["./", "index.html", "config.js", "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

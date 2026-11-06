@@ -14,15 +14,18 @@ App instalável no celular (PWA) feito de arquivos estáticos + Supabase para lo
 - Depois de hospedar, vá em **Authentication → URL Configuration**. Em **Site URL**, coloque o endereço do seu site (ex.: `https://seu-app.vercel.app`) e, em **Redirect URLs**, adicione `https://seu-app.vercel.app/**`. Sem isso, o link do e-mail de confirmação aponta para `localhost` e não abre no celular.
 
 ## 3. Colocar as chaves no site
-Em **Project Settings → API**, copie a **Project URL** e a chave **anon / publishable** e cole no topo do script do `index.html`:
+Abra o `config.js` e preencha os valores (mantendo as aspas):
 
 ```js
-const SUPABASE_URL = "https://SEU-PROJETO.supabase.co";
-const SUPABASE_ANON_KEY = "sua-chave-anon";
+SUPABASE_URL: "https://SEU-PROJETO.supabase.co",
+SUPABASE_ANON_KEY: "sb_publishable_...",
+VAPID_PUBLIC_KEY: "chave pública do gerar-chaves-vapid.html",
 ```
 
-A chave anon é pública por design: quem protege os dados são as regras (RLS) do `setup.sql`.
-**Nunca** coloque a chave `service_role` no site.
+Esses valores são públicos por design: quem protege os dados são as regras do banco.
+**Nunca** coloque no `config.js` a chave `secret`/`service_role`, a senha do banco, a senha do Gmail ou a chave privada das notificações.
+
+Nas próximas atualizações do app, troque só o `index.html` (e os outros arquivos que mudarem) e **mantenha o seu `config.js`**.
 
 ## 4. Hospedar
 Qualquer hospedagem de site estático serve, por exemplo:
@@ -30,12 +33,12 @@ Qualquer hospedagem de site estático serve, por exemplo:
 - **Cloudflare Pages** ou **GitHub Pages**
 - **Vercel**
 
-Envie **todos os arquivos da pasta** (`index.html`, `manifest.webmanifest`, `sw.js` e os 3 ícones `.png`) e pronto. Mande o link para os amigos.
+Envie **todos os arquivos da pasta** (`index.html`, `config.js`, `manifest.webmanifest`, `sw.js` e os 3 ícones `.png`) e pronto. Mande o link para os amigos.
 O site precisa estar em **https** (todas as hospedagens acima já entregam isso), senão o app não instala nem abre a câmera.
 
-## Ajustes rápidos (topo do script)
-- `GOAL`: meta diária em ml.
-- `REQUIRE_PHOTO_ALL`: `true` exige foto também nos botões +200/+300/+500/Outro valor.
+## Ajustes rápidos
+- `GOAL` (no `config.js`): meta diária padrão em ml.
+- `REQUIRE_PHOTO_ALL` (no `config.js`): `true` exige foto também nos botões +200/+300/+500/Outro valor.
 
 ## Observações
 - Depois de rodar o `seguranca.sql`, as fotos ficam privadas: só membros do mesmo grupo as veem, por links que expiram.
@@ -82,3 +85,6 @@ Detalhes:
 3. **Supabase, Authentication:** em **Sign In / Providers → Email**, suba **Minimum password length** para 8 ou mais. **Não** ative o CAPTCHA (Attack Protection) por enquanto: ele exige mudanças no código do app e, ligado sem elas, bloqueia todos os cadastros e logins.
 4. **Chaves:** só a chave publishable/anon vai no site. A `secret`/`service_role` e a senha do banco nunca.
 5. **Opcional:** para travar a biblioteca do Supabase carregada pela CDN, adicione o atributo `integrity` (SRI) na tag `<script>` dela.
+
+## Notificações (e-mail de ranking e lembretes)
+Siga o `PASSO-A-PASSO-NOTIFICACOES.md`.
