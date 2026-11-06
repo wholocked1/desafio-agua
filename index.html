@@ -180,7 +180,11 @@ $("aGo").onclick = async () => {
   $("aGo").disabled = true; $("aMsg").textContent = "";
   try {
     if (signup) {
-      const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: { name } } });
+      const { data, error } = await sb.auth.signUp({ email, password: pass, options: {
+          data: { name },
+          // o link do e-mail volta para este mesmo endereço (e mantém o convite, se houver)
+          emailRedirectTo: location.origin + location.pathname + (lsGet("agua-invite") ? "?convite=" + encodeURIComponent(lsGet("agua-invite")) : "")
+        } });
       if (error) throw error;
       if (!data.session) $("aMsg").textContent = "Conta criada! Confirme pelo e-mail que enviamos e depois entre.";
     } else {
