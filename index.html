@@ -83,7 +83,7 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
     <div class="card">
       <div class="nm"><strong id="gTitle"></strong><span class="mut" id="who"></span></div>
       <div class="row"><button class="alt" id="invite">Convidar amigos</button><button class="alt" id="switchGroup">Trocar de grupo</button></div>
-      <div class="row"><button class="alt" id="membersBtn">Ver membros</button></div>
+      <div class="row"><button class="alt" id="membersBtn">Ver membros</button><button class="alt" id="leave">Sair do grupo</button></div>
       <div id="invBox" hidden>
         <div class="code" id="invLink"></div>
         <div class="row"><button id="invShare">Compartilhar link</button><button class="alt" id="invNew" hidden>Gerar novo código</button></div>
@@ -98,6 +98,8 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
     <div class="card">
       <div class="mut">Quanto você bebeu hoje?</div>
       <div class="big" id="mine">0 ml</div>
+      <div class="mut" id="goalLine" style="text-align:center"></div>
+      <div class="bar" style="margin-top:6px"><i id="goalBar" style="width:0"></i></div>
       <div class="row"><button id="bt">📸 Terminei a garrafinha</button></div>
       <p class="mut" style="margin:6px 0 0">Tire uma foto com a garrafinha de cabeça para baixo para valer.</p>
       <input type="file" id="shot" accept="image/*" capture="environment" hidden>
@@ -105,11 +107,14 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
       <div class="row"><button class="alt" id="undo">Desfazer último</button><button class="alt" id="custom">Outro valor</button></div>
       <label for="bottle" class="mut" style="display:block;margin-top:12px">Tamanho da sua garrafinha (ml)</label>
       <div class="row"><input id="bottle" type="number" min="50" max="5000" step="50" inputmode="numeric" style="margin-top:0"><button class="alt" id="saveBottle" style="flex:0 0 100px">Salvar</button></div>
+      <label for="goal" class="mut" style="display:block;margin-top:12px">Sua meta diária (ml)</label>
+      <div class="row"><input id="goal" type="number" min="500" max="10000" step="100" inputmode="numeric" style="margin-top:0"><button class="alt" id="saveGoal" style="flex:0 0 100px">Salvar</button></div>
       <div class="row"><button class="alt" id="logout">Sair da conta</button></div>
     </div>
 
     <div class="card">
-      <strong>Placar de hoje</strong> <span class="mut">(meta: 2000 ml)</span>
+      <strong>Placar de hoje</strong> <span class="mut">(✅ = bateu a própria meta)</span>
+      <div id="winner" class="mut" style="margin-top:8px" hidden></div>
       <div id="board"></div>
     </div>
 
@@ -154,7 +159,7 @@ if (!/^https:\/\/[a-z0-9]+\.supabase\.co\/?$/i.test(SUPABASE_URL.trim())) {
 const pad = n => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
 
-let day = today(), me = null, myName = "", logs = [], pending = 500, started = null, signup = false, channel = null;
+let day = today(), me = null, myName = "", myGoal = GOAL, winnerKey = "", logs = [], pending = 500, started = null, signup = false, channel = null;
 let myGroups = [], group = null, members = [];
 let bottle = parseInt(lsGet("agua-bottle"), 10) || 500;
 
@@ -223,8 +228,9 @@ if (sb) sb.auth.onAuthStateChange((_ev, session) => {
 
 // ---------- Grupos ----------
 async function afterLogin() {
-  const { data } = await sb.from("profiles").select("name").eq("id", me.id).maybeSingle();
+  const { data } = await sb.from("profiles").select("name,goal_ml").eq("id", me.id).maybeSingle();
   myName = (data && data.name) || me.email.split("@")[0];
+  myGoal = (data && data.goal_ml) || GOAL;
   await usePendingInvite();
   await loadGroups();
   const saved = lsGet("agua-group");
@@ -306,6 +312,7 @@ function openGroup(g) {
   group = g; lsSet("agua-group", g.id); logs = []; members = []; $("membersCard").hidden = true; note("");
   screen("app"); $("invBox").hidden = true;
   $("gTitle").textContent = g.name; $("who").textContent = myName;
+  $("goal").value = myGoal; $("winner").hidden = true; winnerKey = "";
   $("bottle").value = bottle; refreshBottleLabel();
   if (channel) sb.removeChannel(channel);
   channel = sb.channel("logs-" + g.id)
@@ -321,17 +328,17 @@ async function load() {
   if (!me || !group) return;
   const gid = group.id, d = today(); if (d !== day) day = d;
   const { data, error } = await sb.from("logs")
-    .select("id,user_id,ml,photo_path,created_at,profiles(name)")
+    .select("id,user_id,ml,photo_path,created_at,profiles(name,goal_ml)")
     .eq("group_id", gid).eq("day", day).order("created_at", { ascending: false });
   if (error) { note("Erro ao carregar: " + error.message); return; }
   if (!group || group.id !== gid) return; // trocou de grupo no meio do caminho
-  note(""); logs = data || []; render(); loadMembers();
+  note(""); logs = data || []; render(); loadMembers(); loadWinner();
 }
 
 function render() {
   const tot = {};
   logs.forEach(l => {
-    const t = tot[l.user_id] || (tot[l.user_id] = { name: (l.profiles && l.profiles.name) || "?", ml: 0 });
+    const t = tot[l.user_id] || (tot[l.user_id] = { name: (l.profiles && l.profiles.name) || "?", goal: (l.profiles && l.profiles.goal_ml) || GOAL, ml: 0 });
     t.ml += l.ml;
   });
   const list = Object.values(tot).sort((a, b) => b.ml - a.ml);
@@ -343,14 +350,18 @@ function render() {
     const pos = document.createElement("div"); pos.className = "pos"; pos.textContent = medals[i] || String(i + 1);
     const mid = document.createElement("div"); mid.style.flex = "1";
     const nm = document.createElement("div"); nm.className = "nm";
-    const a = document.createElement("span"); a.textContent = r.name + (r.ml >= GOAL ? " ✅" : "");
-    const c = document.createElement("span"); c.className = "mut"; c.textContent = r.ml + " ml";
+    const a = document.createElement("span"); a.textContent = r.name + (r.ml >= r.goal ? " ✅" : "");
+    const c = document.createElement("span"); c.className = "mut"; c.textContent = r.ml + " / " + r.goal + " ml";
     nm.append(a, c);
     const bar = document.createElement("div"); bar.className = "bar";
     const fill = document.createElement("i"); fill.style.width = Math.min(100, Math.round(r.ml / max * 100)) + "%";
     bar.appendChild(fill); mid.append(nm, bar); w.append(pos, mid); b.appendChild(w);
   });
-  $("mine").textContent = logs.filter(l => l.user_id === me.id).reduce((s, l) => s + l.ml, 0) + " ml";
+  const mineMl = logs.filter(l => l.user_id === me.id).reduce((s, l) => s + l.ml, 0);
+  const pct = Math.min(100, Math.round(mineMl / myGoal * 100));
+  $("mine").textContent = mineMl + " ml";
+  $("goalLine").textContent = "Sua meta: " + myGoal + " ml · " + pct + "%" + (mineMl >= myGoal ? " ✅" : "");
+  $("goalBar").style.width = pct + "%";
 
   const box = $("proofs"); box.textContent = "";
   const shots = logs.filter(l => l.photo_path).slice(0, 12);
@@ -367,6 +378,49 @@ function render() {
   });
   renderMembers();
 }
+
+// ---------- Vencedor de ontem, meta e sair do grupo ----------
+async function loadWinner() {
+  if (!me || !group) return;
+  const gid = group.id, key = gid + "|" + day;
+  if (winnerKey === key) return;
+  winnerKey = key;
+  const d = new Date(); d.setDate(d.getDate() - 1);
+  const y = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  const { data, error } = await sb.from("logs").select("user_id,ml,profiles(name)").eq("group_id", gid).eq("day", y);
+  const box = $("winner");
+  if (error) { winnerKey = ""; box.hidden = true; return; }
+  if (!group || group.id !== gid) return;
+  if (!data || !data.length) { box.hidden = true; return; }
+  const tot = {};
+  data.forEach(l => {
+    const t = tot[l.user_id] || (tot[l.user_id] = { name: (l.profiles && l.profiles.name) || "?", ml: 0 });
+    t.ml += l.ml;
+  });
+  const arr = Object.values(tot), top = Math.max.apply(null, arr.map(t => t.ml));
+  box.textContent = "🏆 Vencedor de ontem: " + arr.filter(t => t.ml === top).map(t => t.name).join(" e ") + " (" + top + " ml)";
+  box.hidden = false;
+}
+
+$("saveGoal").onclick = async () => {
+  const v = parseInt($("goal").value, 10);
+  if (!(v >= 500 && v <= 10000)) { note("A meta deve ficar entre 500 e 10000 ml."); $("goal").value = myGoal; return; }
+  const { error } = await sb.from("profiles").update({ goal_ml: v }).eq("id", me.id);
+  if (error) { note("Não consegui salvar a meta: " + error.message); return; }
+  myGoal = v; await load(); note("Meta salva!", true);
+};
+
+$("leave").onclick = async () => {
+  if (!group) return;
+  const owner = group.owner_id === me.id, gid = group.id;
+  const msg = 'Sair do grupo "' + group.name + '"?' + (owner ? "\n\nVocê é o dono: depois de sair, ninguém poderá gerar um novo código de convite." : "");
+  if (!confirm(msg)) return;
+  const { data, error } = await sb.from("members").delete().eq("group_id", gid).eq("user_id", me.id).select();
+  if (error || !data || !data.length) { note("Não consegui sair do grupo."); return; }
+  myGroups = myGroups.filter(x => x.id !== gid);
+  if (lsGet("agua-group") === gid) lsDel("agua-group");
+  showGroups(); note("Você saiu do grupo.", true);
+};
 
 // ---------- Membros ----------
 async function loadMembers() {
