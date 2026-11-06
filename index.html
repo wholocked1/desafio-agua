@@ -53,7 +53,7 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
     <strong id="authTitle">Entrar</strong>
     <input id="aName" maxlength="30" placeholder="Seu nome (para o placar)" autocomplete="nickname" hidden>
     <input id="aEmail" type="email" placeholder="E-mail" autocomplete="email">
-    <input id="aPass" type="password" placeholder="Senha (mín. 6 caracteres)" autocomplete="current-password">
+    <input id="aPass" type="password" placeholder="Senha (nova: mín. 8 caracteres)" autocomplete="current-password">
     <div class="row"><button id="aGo">Entrar</button></div>
     <div class="row"><button class="alt" id="aSwitch">Não tenho conta</button></div>
     <p class="mut" id="aMsg"></p>
@@ -76,6 +76,7 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
       <div class="row"><button class="alt" id="gJoin">Entrar no grupo</button></div>
     </div>
     <div class="row"><button class="alt" id="logout2">Sair da conta</button></div>
+    <div class="row"><button class="alt" id="delAcc2" style="color:#d6453d">Excluir minha conta</button></div>
   </section>
 
   <!-- APP -->
@@ -110,6 +111,7 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
       <label for="goal" class="mut" style="display:block;margin-top:12px">Sua meta diária (ml)</label>
       <div class="row"><input id="goal" type="number" min="500" max="10000" step="100" inputmode="numeric" style="margin-top:0"><button class="alt" id="saveGoal" style="flex:0 0 100px">Salvar</button></div>
       <div class="row"><button class="alt" id="logout">Sair da conta</button></div>
+      <div class="row"><button class="alt" id="delAcc" style="color:#d6453d">Excluir minha conta</button></div>
     </div>
 
     <div class="card">
@@ -187,7 +189,7 @@ $("aSwitch").onclick = () => setMode(!signup);
 
 $("aGo").onclick = async () => {
   const email = $("aEmail").value.trim(), pass = $("aPass").value, name = $("aName").value.trim();
-  if (!email || pass.length < 6 || (signup && !name)) { $("aMsg").textContent = "Preencha tudo (senha com 6+ caracteres)."; return; }
+  if (!email || !pass || (signup && (!name || pass.length < 8))) { $("aMsg").textContent = "Preencha tudo (a senha de uma conta nova precisa de 8+ caracteres)."; return; }
   $("aGo").disabled = true; $("aMsg").textContent = "";
   try {
     if (signup) {
@@ -335,6 +337,15 @@ async function load() {
   note(""); logs = data || []; render(); loadMembers(); loadWinner();
 }
 
+const signed = {};
+async function signPhotos(paths) {
+  const now = Date.now();
+  paths.forEach(p => { signed[p] = { url: "", exp: now + 20000 }; }); // evita repetir enquanto carrega
+  const { data, error } = await sb.storage.from("proofs").createSignedUrls(paths, 3600);
+  if (!error && data) data.forEach(d => { if (d.signedUrl && d.path) signed[d.path] = { url: d.signedUrl, exp: Date.now() + 3300000 }; });
+  render();
+}
+
 function render() {
   const tot = {};
   logs.forEach(l => {
@@ -365,12 +376,14 @@ function render() {
 
   const box = $("proofs"); box.textContent = "";
   const shots = logs.filter(l => l.photo_path).slice(0, 12);
+  const need = shots.map(l => l.photo_path).filter(p => !signed[p] || signed[p].exp < Date.now());
+  if (need.length) signPhotos(need);
   if (!shots.length) { const e = document.createElement("p"); e.className = "mut"; e.textContent = "Nenhuma prova ainda."; box.appendChild(e); }
   shots.forEach(l => {
     const f = document.createElement("figure"); f.className = "pf";
     const im = document.createElement("img");
     im.alt = "Prova de " + ((l.profiles && l.profiles.name) || ""); im.loading = "lazy";
-    im.src = sb.storage.from("proofs").getPublicUrl(l.photo_path).data.publicUrl;
+    const sg = signed[l.photo_path]; if (sg && sg.url) im.src = sg.url;
     const cap = document.createElement("figcaption");
     cap.textContent = ((l.profiles && l.profiles.name) || "?") + " · " + l.ml + " ml · " +
       new Date(l.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -413,14 +426,36 @@ $("saveGoal").onclick = async () => {
 $("leave").onclick = async () => {
   if (!group) return;
   const owner = group.owner_id === me.id, gid = group.id;
-  const msg = 'Sair do grupo "' + group.name + '"?' + (owner ? "\n\nVocê é o dono: depois de sair, ninguém poderá gerar um novo código de convite." : "");
+  const msg = 'Sair do grupo "' + group.name + '"?\n\nSeus registros e fotos neste grupo serão apagados.' + (owner ? "\n\nVocê é o dono: a posse passa para o membro mais antigo (se não houver outros, o grupo é excluído)." : "");
   if (!confirm(msg)) return;
-  const { data, error } = await sb.from("members").delete().eq("group_id", gid).eq("user_id", me.id).select();
-  if (error || !data || !data.length) { note("Não consegui sair do grupo."); return; }
+  const { data, error } = await sb.rpc("leave_group", { gid });
+  if (error) { note("Não consegui sair do grupo."); return; }
+  if (data && data.length) sb.storage.from("proofs").remove(data);
   myGroups = myGroups.filter(x => x.id !== gid);
   if (lsGet("agua-group") === gid) lsDel("agua-group");
   showGroups(); note("Você saiu do grupo.", true);
 };
+
+async function deleteAccount() {
+  const t = prompt("Isso apaga sua conta, seus registros e suas fotos para sempre.\n\nDigite EXCLUIR para confirmar.");
+  if (!t || t.trim().toUpperCase() !== "EXCLUIR") return;
+  note("Apagando…", true);
+  try {
+    const bucket = sb.storage.from("proofs");
+    for (let i = 0; i < 50; i++) {
+      const { data: files, error: e1 } = await bucket.list(me.id, { limit: 100 });
+      if (e1 || !files || !files.length) break;
+      const { error: e2 } = await bucket.remove(files.map(f => me.id + "/" + f.name));
+      if (e2) break;
+    }
+    const { error } = await sb.rpc("delete_my_account");
+    if (error) throw error;
+    ["agua-group", "agua-invite", "agua-bottle"].forEach(lsDel);
+    try { await sb.auth.signOut({ scope: "local" }); } catch (e) {}
+    note("Conta excluída.", true);
+  } catch (e) { note("Não consegui excluir a conta: " + (e.message || e)); }
+}
+$("delAcc").onclick = deleteAccount; $("delAcc2").onclick = deleteAccount;
 
 // ---------- Membros ----------
 async function loadMembers() {
@@ -487,7 +522,13 @@ async function addLog(ml, blob) {
     if (up.error) { note("Não consegui enviar a foto: " + up.error.message); return; }
   }
   const { error } = await sb.from("logs").insert({ group_id: group.id, ml, day, photo_path: path });
-  if (error) { note("Não consegui salvar: " + error.message); return; }
+  if (error) {
+    if (path) sb.storage.from("proofs").remove([path]);
+    note(/limite_diario/.test(error.message) ? "Limite diário de 6000 ml atingido. Por segurança, o app não registra mais que isso por dia."
+      : /dia_invalido/.test(error.message) ? "Data inválida. Confira a data e a hora do seu aparelho."
+      : "Não consegui salvar: " + error.message);
+    return;
+  }
   await load();
 }
 
