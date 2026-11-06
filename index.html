@@ -49,6 +49,7 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
 .badges{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:10px}
 .badge{border:1px solid var(--bd);border-radius:12px;padding:8px;text-align:center;font-size:.75rem;background:var(--bg)}
 .badge .ic{font-size:1.6rem;display:block}.badge.off{opacity:.45}.badge.off .ic{filter:grayscale(1)}
+.wins{display:flex;flex-direction:column;gap:4px}.win{display:flex;justify-content:space-between;gap:8px;font-size:.85rem;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:6px 10px}.win span:last-child{color:var(--mut);white-space:nowrap}
 .tabs{display:flex;gap:6px;margin-top:10px}.tabs button{flex:1;padding:8px 6px;background:transparent;color:var(--ac);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
 .gitem{width:100%;text-align:left;margin-top:8px}
 .code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px;margin-top:8px;font-size:.85rem}
@@ -184,7 +185,7 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
     <div class="card">
       <strong>Placar</strong> <span class="mut" id="boardHint">(✅ = bateu a própria meta · 🔥 = dias seguidos)</span>
       <div class="tabs" id="tabs"><button data-p="day" class="on">Hoje</button><button data-p="week">Semana</button><button data-p="month">Mês</button></div>
-      <div id="winner" class="mut" style="margin-top:8px" hidden></div>
+      <div id="winner" style="margin-top:8px" hidden></div>
       <div id="board"></div>
     </div>
 
@@ -475,8 +476,48 @@ document.querySelectorAll("#tabs button").forEach(btn => btn.onclick = () => {
   render();
 });
 
+// vencedor(es) de um período fechado: quem bebeu mais (empates aparecem juntos)
+function winnersOf(start, end, ppl, totals) {
+  let top = 0, names = [];
+  Object.keys(totals).forEach(uid => {
+    let ml = 0;
+    Object.keys(totals[uid]).forEach(d => { if (d >= start && d <= end) ml += totals[uid][d]; });
+    if (ml <= 0) return;
+    const nm = (ppl[uid] || {}).name || "?";
+    if (ml > top) { top = ml; names = [nm]; } else if (ml === top) names.push(nm);
+  });
+  return top ? { names, ml: top } : null;
+}
+
+function renderWinners(ppl, totals) {
+  const box = $("winner");
+  if (!histKey) return; // sem histórico: fica o vencedor de ontem do jeito antigo
+  const br = d => d.slice(8, 10) + "/" + d.slice(5, 7);
+  const yday = addDays(day, -1);
+  const wStart = addDays(periodStart("week"), -7), wEnd = addDays(periodStart("week"), -1);
+  const mEnd = addDays(periodStart("month"), -1), mStart = mEnd.slice(0, 8) + "01";
+  const [my, mm] = mEnd.split("-").map(Number);
+  const monthName = new Date(my, mm - 1, 1).toLocaleDateString("pt-BR", { month: "long" });
+  const items = [
+    ["Ontem", winnersOf(yday, yday, ppl, totals)],
+    ["Semana passada (" + br(wStart) + " a " + br(wEnd) + ")", winnersOf(wStart, wEnd, ppl, totals)],
+    ["Mês passado (" + monthName + ")", winnersOf(mStart, mEnd, ppl, totals)]
+  ].filter(x => x[1]);
+  box.textContent = "";
+  if (!items.length) { box.hidden = true; return; }
+  const list = document.createElement("div"); list.className = "wins";
+  items.forEach(([label, w]) => {
+    const row = document.createElement("div"); row.className = "win";
+    const a = document.createElement("span"); a.textContent = "🏆 " + label + ": " + w.names.join(" e ");
+    const b = document.createElement("span"); b.textContent = w.ml.toLocaleString("pt-BR") + " ml";
+    row.append(a, b); list.appendChild(row);
+  });
+  box.appendChild(list); box.hidden = false;
+}
+
 function render() {
   const ppl = people(), totals = dailyTotals(), start = periodStart(period);
+  renderWinners(ppl, totals);
   const rows = Object.keys(ppl).map(uid => {
     const u = totals[uid] || {}, p = ppl[uid];
     let ml = 0, hit = 0;
@@ -551,6 +592,7 @@ async function loadWinner() {
   const y = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
   const { data, error } = await sb.from("logs").select("user_id,ml,profiles!user_id(name)").eq("group_id", gid).eq("day", y);
   const box = $("winner");
+  if (histKey) return; // com o histórico carregado, os vencedores vêm de renderWinners()
   if (error) { winnerKey = ""; box.hidden = true; return; }
   if (!group || group.id !== gid) return;
   if (!data || !data.length) { box.hidden = true; return; }
