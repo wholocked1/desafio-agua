@@ -22,7 +22,7 @@ main{max-width:520px;margin:0 auto;padding:16px}
 h1{font-size:1.5rem;margin:8px 0 2px}
 .sub{color:var(--mut);margin:0 0 14px;font-size:.9rem}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:14px;margin-bottom:14px}
-input{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:10px;width:100%;margin-top:8px}
+select,input{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:10px;width:100%;margin-top:8px}
 button{font:inherit;cursor:pointer;border:0;border-radius:12px;padding:12px 8px;background:var(--ac);color:#fff;font-weight:600}
 button:disabled{opacity:.6;cursor:wait}
 button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
@@ -113,6 +113,24 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
       <p class="mut" style="margin:8px 0 0">A meta aparece para o grupo. A garrafinha fica só neste aparelho.</p>
     </div>
     <div class="card">
+      <strong>Notificações</strong>
+      <label for="emailFreq" class="mut" style="display:block;margin-top:8px">Resumo do ranking por e-mail</label>
+      <div class="row"><select id="emailFreq" style="margin-top:0">
+        <option value="none">Não quero receber</option>
+        <option value="weekly">Semanal (segunda, 9h)</option>
+        <option value="monthly">Mensal (dia 1º, 9h)</option>
+        <option value="both">Semanal e mensal</option>
+      </select><button class="alt" id="saveEmailFreq" style="flex:0 0 100px">Salvar</button></div>
+      <label for="reminder" class="mut" style="display:block;margin-top:12px">Lembretes para beber água (das 9h às 21h, só se ainda não bateu a meta)</label>
+      <div class="row"><select id="reminder" style="margin-top:0">
+        <option value="0">Desligados</option>
+        <option value="2">A cada 2 horas</option>
+        <option value="3">A cada 3 horas</option>
+      </select><button class="alt" id="saveReminder" style="flex:0 0 100px">Salvar</button></div>
+      <p class="mut" id="pushHint" style="margin:8px 0 0"></p>
+      <div class="row"><button class="alt" id="testPush">Testar notificação</button><button class="alt" id="testEmail">Me mandar um resumo</button></div>
+    </div>
+    <div class="card">
       <strong>Seu histórico</strong> <span class="mut">(todos os seus grupos somados)</span>
       <div class="stats" id="hStats"></div>
       <div class="hchart" id="hChart" role="img" aria-label="Água bebida nos últimos 14 dias"></div>
@@ -186,6 +204,7 @@ const SUPABASE_URL = "https://nwiqiaqeiwmvkylcjwrb.supabase.co";       // ex.: h
 const SUPABASE_ANON_KEY = "sb_publishable_AUg94ROop6o5h3387WoKmQ_u_STvhdf";     // chave "anon" / "publishable" (pública por design)
 const GOAL = 2000;               // meta diária em ml
 const REQUIRE_PHOTO_ALL = false; // true = exige foto também nos botões +200/+300/+500/Outro valor
+const VAPID_PUBLIC_KEY = "BBVhevWiQF2Yt2XzBkNkJbeeSkf7DzFAw4dAbWsJFLWKlVIm4VrBNFuhostPlbCUH_VpMjKhviHUNlMFId1Xpno"; // gerada no gerar-chaves-vapid.html (a pública, nunca a privada)
 // ==========================
 
 const $ = id => document.getElementById(id);
@@ -211,7 +230,7 @@ if (!/^https:\/\/[a-z0-9]+\.supabase\.co\/?$/i.test(SUPABASE_URL.trim())) {
 const pad = n => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
 
-let day = today(), me = null, myName = "", myGoal = GOAL, winnerKey = "", logs = [], pending = 500, started = null, signup = false, channel = null;
+let day = today(), me = null, myName = "", myGoal = GOAL, myEmailFreq = "none", myReminder = 0, winnerKey = "", logs = [], pending = 500, started = null, signup = false, channel = null;
 let myGroups = [], group = null, members = [], reacts = {}, openLogs = {}, hist = [], period = "day", histKey = "";
 let bottle = parseInt(lsGet("agua-bottle"), 10) || 500;
 
@@ -283,9 +302,12 @@ if (sb) sb.auth.onAuthStateChange((_ev, session) => {
 
 // ---------- Grupos ----------
 async function afterLogin() {
-  const { data } = await sb.from("profiles").select("name,goal_ml").eq("id", me.id).maybeSingle();
+  let { data, error } = await sb.from("profiles").select("name,goal_ml,email_freq,reminder_every").eq("id", me.id).maybeSingle();
+  if (error) ({ data } = await sb.from("profiles").select("name,goal_ml").eq("id", me.id).maybeSingle()); // banco sem a migração de notificações
   myName = (data && data.name) || me.email.split("@")[0];
   myGoal = (data && data.goal_ml) || GOAL;
+  myEmailFreq = (data && data.email_freq) || "none";
+  myReminder = (data && data.reminder_every) || 0;
   await usePendingInvite();
   await loadGroups();
   const saved = lsGet("agua-group");
@@ -588,6 +610,9 @@ function showProfile() {
   $("pName").value = myName;
   $("goal").value = myGoal;
   $("bottle").value = bottle;
+  $("emailFreq").value = myEmailFreq;
+  $("reminder").value = String(myReminder);
+  $("pushHint").textContent = pushHintText();
   const box = $("pGroups"); box.textContent = "";
   if (!myGroups.length) {
     const p = document.createElement("p"); p.className = "mut"; p.textContent = "Você ainda não está em nenhum grupo."; box.appendChild(p);
@@ -683,6 +708,79 @@ function renderProfileStats(rows) {
   });
 }
 $("pBack").onclick = () => { if (lastScreen === "app" && group) openGroup(group); else showGroups(); };
+
+// ---------- Notificações ----------
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isStandalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+const vapidReady = () => VAPID_PUBLIC_KEY.length > 40 && !/COLE_AQUI/.test(VAPID_PUBLIC_KEY);
+
+function pushHintText() {
+  if (isIOS && !isStandalone) return "No iPhone, os lembretes só funcionam com o app instalado na Tela de Início e aberto pelo ícone.";
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return "Este navegador não aceita notificações.";
+  if (Notification.permission === "denied") return "As notificações estão bloqueadas para este app. Libere nos ajustes do celular/navegador.";
+  return "Os lembretes chegam em cada aparelho onde você ativar.";
+}
+
+function b64uToBytes(s) {
+  const pad = "=".repeat((4 - s.length % 4) % 4), b = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(b, c => c.charCodeAt(0));
+}
+
+async function enablePush() {
+  if (!vapidReady()) throw new Error("Falta configurar a VAPID_PUBLIC_KEY no index.html.");
+  if (isIOS && !isStandalone) throw new Error("No iPhone, instale o app na Tela de Início e abra pelo ícone para ativar os lembretes.");
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw new Error("Este navegador não aceita notificações.");
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw new Error("Você não permitiu as notificações.");
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(VAPID_PUBLIC_KEY.trim()) });
+  const j = sub.toJSON();
+  const { error } = await sb.rpc("save_push_subscription", { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth });
+  if (error) throw new Error("Não consegui salvar este aparelho: " + error.message);
+}
+
+async function callNotify(type) {
+  const { data } = await sb.auth.getSession();
+  const token = data && data.session && data.session.access_token;
+  if (!token) throw new Error("Faça login de novo.");
+  const r = await fetch(SUPABASE_URL.trim().replace(/\/$/, "") + "/functions/v1/notify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, apikey: SUPABASE_ANON_KEY.trim() },
+    body: JSON.stringify({ type })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ("a função de envio respondeu com erro " + r.status));
+  return j;
+}
+
+$("saveEmailFreq").onclick = async () => {
+  const v = $("emailFreq").value;
+  const { error } = await sb.from("profiles").update({ email_freq: v }).eq("id", me.id);
+  if (error) { note("Não consegui salvar: " + error.message); return; }
+  myEmailFreq = v; note(v === "none" ? "Você não vai receber e-mails de resumo." : "Preferência de e-mail salva!", true);
+};
+
+$("saveReminder").onclick = async () => {
+  const v = parseInt($("reminder").value, 10);
+  try {
+    if (v > 0) { note("Ativando…", true); await enablePush(); }
+    const { error } = await sb.from("profiles").update({ reminder_every: v }).eq("id", me.id);
+    if (error) throw new Error("Não consegui salvar: " + error.message);
+    myReminder = v; note(v ? "Lembretes ativados a cada " + v + " horas!" : "Lembretes desligados.", true);
+  } catch (e) { $("reminder").value = String(myReminder); note(e.message || String(e)); }
+  $("pushHint").textContent = pushHintText();
+};
+
+$("testPush").onclick = async () => {
+  try { note("Enviando…", true); await callNotify("test-push"); note("Notificação enviada! Ela pode levar alguns segundos.", true); }
+  catch (e) { note(e.message || String(e)); }
+};
+
+$("testEmail").onclick = async () => {
+  try { note("Enviando…", true); await callNotify("test-email"); note("Resumo enviado para " + me.email + ". Confira também o spam.", true); }
+  catch (e) { note(e.message || String(e)); }
+};
 
 $("saveName").onclick = async () => {
   const v = $("pName").value.trim();
