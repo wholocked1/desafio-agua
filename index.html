@@ -360,7 +360,7 @@ async function load() {
   if (!me || !group) return;
   const gid = group.id, d = today(); if (d !== day) day = d;
   const { data, error } = await sb.from("logs")
-    .select("id,user_id,ml,photo_path,created_at,profiles(name,goal_ml)")
+    .select("id,user_id,ml,photo_path,created_at,profiles!user_id(name,goal_ml)")
     .eq("group_id", gid).eq("day", day).order("created_at", { ascending: false });
   if (error) { note("Erro ao carregar: " + error.message); return; }
   if (!group || group.id !== gid) return; // trocou de grupo no meio do caminho
@@ -500,7 +500,7 @@ async function loadWinner() {
   winnerKey = key;
   const d = new Date(); d.setDate(d.getDate() - 1);
   const y = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
-  const { data, error } = await sb.from("logs").select("user_id,ml,profiles(name)").eq("group_id", gid).eq("day", y);
+  const { data, error } = await sb.from("logs").select("user_id,ml,profiles!user_id(name)").eq("group_id", gid).eq("day", y);
   const box = $("winner");
   if (error) { winnerKey = ""; box.hidden = true; return; }
   if (!group || group.id !== gid) return;
@@ -639,7 +639,7 @@ async function removeMember(m) {
 async function loadMembers() {
   if (!me || !group) return;
   const gid = group.id;
-  const { data, error } = await sb.from("members").select("user_id,joined_at,profiles(name,goal_ml)").eq("group_id", gid);
+  const { data, error } = await sb.from("members").select("user_id,joined_at,profiles!user_id(name,goal_ml)").eq("group_id", gid);
   if (error || !group || group.id !== gid) return;
   members = data || []; renderMembers();
 }
