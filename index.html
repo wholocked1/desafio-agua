@@ -83,10 +83,16 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
     <div class="card">
       <div class="nm"><strong id="gTitle"></strong><span class="mut" id="who"></span></div>
       <div class="row"><button class="alt" id="invite">Convidar amigos</button><button class="alt" id="switchGroup">Trocar de grupo</button></div>
+      <div class="row"><button class="alt" id="membersBtn">Ver membros</button></div>
       <div id="invBox" hidden>
         <div class="code" id="invLink"></div>
         <div class="row"><button id="invShare">Compartilhar link</button><button class="alt" id="invNew" hidden>Gerar novo código</button></div>
       </div>
+    </div>
+
+    <div class="card" id="membersCard" hidden>
+      <strong>Membros</strong> <span class="mut" id="mCount"></span>
+      <div id="mList"></div>
     </div>
 
     <div class="card">
@@ -149,7 +155,7 @@ const pad = n => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
 
 let day = today(), me = null, myName = "", logs = [], pending = 500, started = null, signup = false, channel = null;
-let myGroups = [], group = null;
+let myGroups = [], group = null, members = [];
 let bottle = parseInt(lsGet("agua-bottle"), 10) || 500;
 
 $("date").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
@@ -297,7 +303,7 @@ $("invNew").onclick = async () => {
 };
 
 function openGroup(g) {
-  group = g; lsSet("agua-group", g.id); logs = []; note("");
+  group = g; lsSet("agua-group", g.id); logs = []; members = []; $("membersCard").hidden = true; note("");
   screen("app"); $("invBox").hidden = true;
   $("gTitle").textContent = g.name; $("who").textContent = myName;
   $("bottle").value = bottle; refreshBottleLabel();
@@ -319,7 +325,7 @@ async function load() {
     .eq("group_id", gid).eq("day", day).order("created_at", { ascending: false });
   if (error) { note("Erro ao carregar: " + error.message); return; }
   if (!group || group.id !== gid) return; // trocou de grupo no meio do caminho
-  note(""); logs = data || []; render();
+  note(""); logs = data || []; render(); loadMembers();
 }
 
 function render() {
@@ -359,7 +365,49 @@ function render() {
       new Date(l.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     f.append(im, cap); box.appendChild(f);
   });
+  renderMembers();
 }
+
+// ---------- Membros ----------
+async function loadMembers() {
+  if (!me || !group) return;
+  const gid = group.id;
+  const { data, error } = await sb.from("members").select("user_id,joined_at,profiles(name)").eq("group_id", gid);
+  if (error || !group || group.id !== gid) return;
+  members = data || []; renderMembers();
+}
+
+function renderMembers() {
+  if (!group) return;
+  const open = !$("membersCard").hidden;
+  $("membersBtn").textContent = open ? "Esconder membros" : "Ver membros" + (members.length ? " (" + members.length + ")" : "");
+  $("mCount").textContent = members.length ? "(" + members.length + ")" : "";
+  const box = $("mList"); box.textContent = "";
+  if (!open) return;
+  const ml = {};
+  logs.forEach(l => { ml[l.user_id] = (ml[l.user_id] || 0) + l.ml; });
+  const nameOf = m => (m.profiles && m.profiles.name) || "Sem nome";
+  members.slice()
+    .sort((a, b) => (ml[b.user_id] || 0) - (ml[a.user_id] || 0) || nameOf(a).localeCompare(nameOf(b), "pt-BR"))
+    .forEach(m => {
+      const row = document.createElement("div"); row.className = "row2";
+      const mid = document.createElement("div"); mid.style.flex = "1";
+      const nm = document.createElement("div"); nm.className = "nm";
+      const a = document.createElement("span");
+      a.textContent = nameOf(m) + (group.owner_id === m.user_id ? " 👑" : "") + (m.user_id === me.id ? " (você)" : "");
+      const c = document.createElement("span"); c.className = "mut"; c.textContent = (ml[m.user_id] || 0) + " ml hoje";
+      nm.append(a, c);
+      const sub = document.createElement("div"); sub.className = "mut";
+      sub.textContent = "No grupo desde " + new Date(m.joined_at).toLocaleDateString("pt-BR");
+      mid.append(nm, sub); row.appendChild(mid); box.appendChild(row);
+    });
+}
+
+$("membersBtn").onclick = () => {
+  $("membersCard").hidden = !$("membersCard").hidden;
+  renderMembers();
+  if (!$("membersCard").hidden) loadMembers();
+};
 
 // ---------- Registros ----------
 function shrink(file) {
