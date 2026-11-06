@@ -72,6 +72,7 @@ Detalhes:
 
 ## Atualizando um banco que já existe
 - **Meta diária por pessoa:** rode o `migracao-meta.sql` no SQL Editor **antes** de publicar o `index.html` novo. Quem cria o banco do zero com o `setup.sql` atual já recebe essa coluna.
+- **Histórico e conquistas no Perfil:** rode o `migracao-perfil.sql` no SQL Editor **antes** de publicar o `index.html` novo.
 - **Reações e moderação:** rode o `migracao-reacoes-moderacao.sql` no SQL Editor **antes** de publicar o `index.html` novo.
 - **Ranking da semana/mês e streak:** rode o `migracao-ranking.sql` no SQL Editor **antes** de publicar o `index.html` novo. Quem cria o banco do zero com o `setup.sql` atual já recebe essa função.
 

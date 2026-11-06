@@ -37,6 +37,18 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
 #note{color:#d6453d;font-size:.85rem;text-align:center;min-height:1.2em}
 #note.ok{color:var(--ac)}
 .chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.chip{padding:3px 7px;font-size:.78rem;border-radius:999px;background:transparent;color:var(--tx);border:1px solid var(--bd);font-weight:500}.chip.on{background:var(--ac2);border-color:var(--ac)}.chip.danger{color:#d6453d}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.stat{background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:8px 10px}
+.stat b{display:block;font-size:1.15rem}.stat span{color:var(--mut);font-size:.75rem}
+.hchart{position:relative;display:flex;align-items:flex-end;gap:2px;height:120px;margin-top:14px;border-bottom:1px solid var(--bd)}
+.hchart .col{flex:1;height:100%;display:flex;align-items:flex-end;background:none;border:0;padding:0;border-radius:0;cursor:pointer}
+.hchart .col i{display:block;width:100%;border-radius:4px 4px 0 0;background:var(--ac);min-height:2px}
+.hchart .col.low i{opacity:.4}.hchart .col.sel i{outline:2px solid var(--tx);outline-offset:1px}
+.hchart .goal{position:absolute;left:0;right:0;border-top:1px dashed var(--mut);pointer-events:none}
+.hdays{display:flex;gap:2px;margin-top:4px}.hdays span{flex:1;text-align:center;font-size:.62rem;color:var(--mut)}
+.badges{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:10px}
+.badge{border:1px solid var(--bd);border-radius:12px;padding:8px;text-align:center;font-size:.75rem;background:var(--bg)}
+.badge .ic{font-size:1.6rem;display:block}.badge.off{opacity:.45}.badge.off .ic{filter:grayscale(1)}
 .tabs{display:flex;gap:6px;margin-top:10px}.tabs button{flex:1;padding:8px 6px;background:transparent;color:var(--ac);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
 .gitem{width:100%;text-align:left;margin-top:8px}
 .code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px;margin-top:8px;font-size:.85rem}
@@ -99,6 +111,17 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
       <label for="bottle" class="mut" style="display:block;margin-top:12px">Tamanho da sua garrafinha (ml)</label>
       <div class="row"><input id="bottle" type="number" min="50" max="5000" step="50" inputmode="numeric" style="margin-top:0"><button class="alt" id="saveBottle" style="flex:0 0 100px">Salvar</button></div>
       <p class="mut" style="margin:8px 0 0">A meta aparece para o grupo. A garrafinha fica só neste aparelho.</p>
+    </div>
+    <div class="card">
+      <strong>Seu histórico</strong> <span class="mut">(todos os seus grupos somados)</span>
+      <div class="stats" id="hStats"></div>
+      <div class="hchart" id="hChart" role="img" aria-label="Água bebida nos últimos 14 dias"></div>
+      <div class="hdays" id="hDays"></div>
+      <div class="mut" id="hInfo" style="margin-top:6px;min-height:1.2em">Toque numa barra para ver o dia. Linha tracejada = sua meta.</div>
+    </div>
+    <div class="card">
+      <strong>Conquistas</strong> <span class="mut" id="bCount"></span>
+      <div class="badges" id="badges"></div>
     </div>
     <div class="card">
       <strong>Seus grupos</strong>
@@ -560,6 +583,7 @@ $("delAcc").onclick = deleteAccount;
 // ---------- Perfil ----------
 function showProfile() {
   screen("profile"); note("");
+  loadProfileStats();
   $("pEmail").textContent = me.email;
   $("pName").value = myName;
   $("goal").value = myGoal;
@@ -575,6 +599,89 @@ function showProfile() {
   });
 }
 $("profileBtn").onclick = showProfile;
+
+// ---------- Histórico e conquistas ----------
+async function loadProfileStats() {
+  $("hStats").textContent = ""; $("hChart").textContent = ""; $("hDays").textContent = ""; $("badges").textContent = "";
+  const { data, error } = await sb.rpc("my_daily_totals");
+  if (error) { $("hInfo").textContent = "Histórico indisponível: rode o migracao-perfil.sql no Supabase."; return; }
+  renderProfileStats(data || []);
+}
+
+function renderProfileStats(rows) {
+  const t = {}; rows.forEach(r => { t[r.day] = r; });
+  const goal = myGoal, ml = d => (t[d] ? t[d].ml : 0);
+  const fmtL = v => (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " L";
+  const dayLabel = d => { const [y, m, dd] = d.split("-"); return dd + "/" + m; };
+
+  // números gerais
+  let sum30 = 0, hit30 = 0;
+  for (let i = 0; i < 30; i++) { const d = addDays(day, -i); sum30 += ml(d); if (ml(d) >= goal) hit30++; }
+  const days = Object.keys(t).sort();
+  const totalMl = rows.reduce((s, r) => s + r.ml, 0), totalPhotos = rows.reduce((s, r) => s + r.photos, 0);
+  const hitDays = days.filter(d => t[d].ml >= goal).length;
+  let best = 0, run = 0, prev = null;
+  days.forEach(d => {
+    if (t[d].ml >= goal) { run = (prev && addDays(prev, 1) === d) ? run + 1 : 1; prev = d; best = Math.max(best, run); }
+  });
+  let cur = 0, d0 = ml(day) >= goal ? day : addDays(day, -1);
+  while (ml(d0) >= goal && cur < 3650) { cur++; d0 = addDays(d0, -1); }
+
+  const tiles = [
+    [Math.round(sum30 / 30).toLocaleString("pt-BR") + " ml", "média por dia (30 dias)"],
+    [hit30 + " de 30", "dias com meta batida"],
+    ["🔥 " + cur + (cur === 1 ? " dia" : " dias"), "sequência atual (recorde: " + best + ")"],
+    [fmtL(totalMl), "bebidos desde o início"]
+  ];
+  tiles.forEach(([v, l]) => {
+    const el = document.createElement("div"); el.className = "stat";
+    const b = document.createElement("b"); b.textContent = v;
+    const sp = document.createElement("span"); sp.textContent = l;
+    el.append(b, sp); $("hStats").appendChild(el);
+  });
+
+  // gráfico dos últimos 14 dias (uma série; barras mais claras = abaixo da meta)
+  const last = []; for (let i = 13; i >= 0; i--) last.push(addDays(day, -i));
+  const top = Math.max(goal, ...last.map(ml)) * 1.1;
+  const chart = $("hChart");
+  const gl = document.createElement("div"); gl.className = "goal"; gl.style.bottom = (goal / top * 100) + "%"; chart.appendChild(gl);
+  last.forEach((d, i) => {
+    const v = ml(d), col = document.createElement("button");
+    col.className = "col" + (v >= goal ? "" : " low");
+    col.setAttribute("aria-label", dayLabel(d) + ": " + v + " ml" + (v >= goal ? ", meta batida" : ""));
+    const bar = document.createElement("i"); bar.style.height = (v ? Math.max(2, v / top * 100) : 0) + "%";
+    col.appendChild(bar);
+    const show = () => {
+      chart.querySelectorAll(".col").forEach(c => c.classList.remove("sel")); col.classList.add("sel");
+      $("hInfo").textContent = dayLabel(d) + (d === day ? " (hoje)" : "") + ": " + v.toLocaleString("pt-BR") + " ml" + (v >= goal ? " · meta batida ✅" : " · meta de " + goal + " ml");
+    };
+    col.onclick = show; col.onmouseenter = show;
+    chart.appendChild(col);
+    const lb = document.createElement("span"); lb.textContent = (i % 2 === 1) ? dayLabel(d).slice(0, 2) : ""; $("hDays").appendChild(lb);
+  });
+
+  // conquistas
+  const badges = [
+    ["💧", "Primeiro gole", totalMl > 0, ""],
+    ["📸", "Prova real", totalPhotos >= 1, totalPhotos + "/1 foto"],
+    ["✅", "Meta batida", hitDays >= 1, hitDays + "/1 dia"],
+    ["🔥", "3 dias seguidos", best >= 3, best + "/3"],
+    ["⚡", "7 dias seguidos", best >= 7, best + "/7"],
+    ["🏅", "30 dias seguidos", best >= 30, best + "/30"],
+    ["📅", "Meta 30 vezes", hitDays >= 30, hitDays + "/30"],
+    ["🌊", "10 litros", totalMl >= 10000, fmtL(totalMl) + "/10 L"],
+    ["🐳", "100 litros", totalMl >= 100000, fmtL(totalMl) + "/100 L"],
+    ["🎞️", "50 provas", totalPhotos >= 50, totalPhotos + "/50"]
+  ];
+  $("bCount").textContent = "(" + badges.filter(b => b[2]).length + " de " + badges.length + ")";
+  badges.forEach(([ic, name, ok, prog]) => {
+    const el = document.createElement("div"); el.className = "badge" + (ok ? "" : " off");
+    const i = document.createElement("span"); i.className = "ic"; i.textContent = ic;
+    const n = document.createElement("div"); n.textContent = name;
+    const p = document.createElement("div"); p.className = "mut"; p.textContent = ok ? "Conquistada!" : prog;
+    el.append(i, n, p); $("badges").appendChild(el);
+  });
+}
 $("pBack").onclick = () => { if (lastScreen === "app" && group) openGroup(group); else showGroups(); };
 
 $("saveName").onclick = async () => {
