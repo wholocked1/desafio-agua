@@ -45,7 +45,10 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
 </head>
 <body>
 <main>
-  <h1>💧 Desafio da Água</h1>
+  <div class="nm" style="align-items:center">
+    <h1>💧 Desafio da Água</h1>
+    <button class="alt" id="profileBtn" style="flex:0 0 auto;padding:8px 12px" hidden>👤 Perfil</button>
+  </div>
   <p class="sub" id="date"></p>
 
   <!-- LOGIN -->
@@ -75,8 +78,34 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
       <input id="gCode" maxlength="40" placeholder="Código do convite" autocomplete="off" autocapitalize="off">
       <div class="row"><button class="alt" id="gJoin">Entrar no grupo</button></div>
     </div>
-    <div class="row"><button class="alt" id="logout2">Sair da conta</button></div>
-    <div class="row"><button class="alt" id="delAcc2" style="color:#d6453d">Excluir minha conta</button></div>
+  </section>
+
+  <!-- PERFIL -->
+  <section id="profile" hidden>
+    <div class="row" style="margin-top:0;margin-bottom:12px"><button class="alt" id="pBack" style="flex:0 0 auto;padding:8px 14px">← Voltar</button></div>
+    <div class="card">
+      <strong>Seu perfil</strong>
+      <div class="mut" id="pEmail" style="margin-top:4px"></div>
+      <label for="pName" class="mut" style="display:block;margin-top:12px">Nome que aparece no placar</label>
+      <div class="row"><input id="pName" maxlength="30" style="margin-top:0"><button class="alt" id="saveName" style="flex:0 0 100px">Salvar</button></div>
+    </div>
+    <div class="card">
+      <strong>Hidratação</strong>
+      <label for="goal" class="mut" style="display:block;margin-top:8px">Sua meta diária (ml)</label>
+      <div class="row"><input id="goal" type="number" min="500" max="10000" step="100" inputmode="numeric" style="margin-top:0"><button class="alt" id="saveGoal" style="flex:0 0 100px">Salvar</button></div>
+      <label for="bottle" class="mut" style="display:block;margin-top:12px">Tamanho da sua garrafinha (ml)</label>
+      <div class="row"><input id="bottle" type="number" min="50" max="5000" step="50" inputmode="numeric" style="margin-top:0"><button class="alt" id="saveBottle" style="flex:0 0 100px">Salvar</button></div>
+      <p class="mut" style="margin:8px 0 0">A meta aparece para o grupo. A garrafinha fica só neste aparelho.</p>
+    </div>
+    <div class="card">
+      <strong>Seus grupos</strong>
+      <div id="pGroups"></div>
+    </div>
+    <div class="card">
+      <strong>Conta</strong>
+      <div class="row"><button class="alt" id="logout">Sair da conta</button></div>
+      <div class="row"><button class="alt" id="delAcc" style="color:#d6453d">Excluir minha conta</button></div>
+    </div>
   </section>
 
   <!-- APP -->
@@ -106,12 +135,6 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
       <input type="file" id="shot" accept="image/*" capture="environment" hidden>
       <div class="row"><button data-ml="200">+200</button><button data-ml="300">+300</button><button data-ml="500">+500</button></div>
       <div class="row"><button class="alt" id="undo">Desfazer último</button><button class="alt" id="custom">Outro valor</button></div>
-      <label for="bottle" class="mut" style="display:block;margin-top:12px">Tamanho da sua garrafinha (ml)</label>
-      <div class="row"><input id="bottle" type="number" min="50" max="5000" step="50" inputmode="numeric" style="margin-top:0"><button class="alt" id="saveBottle" style="flex:0 0 100px">Salvar</button></div>
-      <label for="goal" class="mut" style="display:block;margin-top:12px">Sua meta diária (ml)</label>
-      <div class="row"><input id="goal" type="number" min="500" max="10000" step="100" inputmode="numeric" style="margin-top:0"><button class="alt" id="saveGoal" style="flex:0 0 100px">Salvar</button></div>
-      <div class="row"><button class="alt" id="logout">Sair da conta</button></div>
-      <div class="row"><button class="alt" id="delAcc" style="color:#d6453d">Excluir minha conta</button></div>
     </div>
 
     <div class="card">
@@ -171,8 +194,11 @@ $("date").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long"
 const inviteParam = (new URLSearchParams(location.search).get("convite") || "").trim().toLowerCase();
 if (inviteParam) lsSet("agua-invite", inviteParam);
 
+let lastScreen = "groups";
 function screen(name) {
-  ["auth", "groups", "app"].forEach(s => $(s).hidden = s !== name);
+  ["auth", "groups", "app", "profile"].forEach(s => $(s).hidden = s !== name);
+  if (name !== "profile") lastScreen = name;
+  $("profileBtn").hidden = name === "auth" || name === "profile";
 }
 
 // ---------- Login ----------
@@ -209,7 +235,7 @@ $("aGo").onclick = async () => {
 };
 
 const logout = () => sb.auth.signOut();
-$("logout").onclick = logout; $("logout2").onclick = logout;
+$("logout").onclick = logout;
 
 function showAuth() {
   started = null; group = null; myGroups = [];
@@ -455,7 +481,35 @@ async function deleteAccount() {
     note("Conta excluída.", true);
   } catch (e) { note("Não consegui excluir a conta: " + (e.message || e)); }
 }
-$("delAcc").onclick = deleteAccount; $("delAcc2").onclick = deleteAccount;
+$("delAcc").onclick = deleteAccount;
+
+// ---------- Perfil ----------
+function showProfile() {
+  screen("profile"); note("");
+  $("pEmail").textContent = me.email;
+  $("pName").value = myName;
+  $("goal").value = myGoal;
+  $("bottle").value = bottle;
+  const box = $("pGroups"); box.textContent = "";
+  if (!myGroups.length) {
+    const p = document.createElement("p"); p.className = "mut"; p.textContent = "Você ainda não está em nenhum grupo."; box.appendChild(p);
+  }
+  myGroups.forEach(g => {
+    const b = document.createElement("button"); b.className = "alt gitem";
+    b.textContent = g.name + (g.owner_id === me.id ? " 👑" : "");
+    b.onclick = () => openGroup(g); box.appendChild(b);
+  });
+}
+$("profileBtn").onclick = showProfile;
+$("pBack").onclick = () => { if (lastScreen === "app" && group) openGroup(group); else showGroups(); };
+
+$("saveName").onclick = async () => {
+  const v = $("pName").value.trim();
+  if (!v || v.length > 30) { note("O nome precisa ter de 1 a 30 caracteres."); $("pName").value = myName; return; }
+  const { error } = await sb.from("profiles").update({ name: v }).eq("id", me.id);
+  if (error) { note("Não consegui salvar o nome: " + error.message); return; }
+  myName = v; note("Nome salvo!", true);
+};
 
 // ---------- Membros ----------
 async function loadMembers() {
@@ -556,7 +610,7 @@ $("undo").onclick = async () => {
 $("saveBottle").onclick = () => {
   const v = parseInt($("bottle").value, 10);
   if (v > 0) { bottle = Math.min(5000, Math.max(50, v)); lsSet("agua-bottle", String(bottle)); }
-  $("bottle").value = bottle; refreshBottleLabel();
+  $("bottle").value = bottle; refreshBottleLabel(); note("Garrafinha salva!", true);
 };
 
 // atualiza o placar de tempos em tempos (e vira o dia sozinho)
