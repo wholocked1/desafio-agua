@@ -55,7 +55,7 @@ O site precisa estar em **https** (todas as hospedagens acima já entregam isso)
 O app abre em tela cheia com o ícone da gota, pede permissão da câmera na primeira foto e se atualiza sozinho quando você publicar uma versão nova.
 
 ## Atualizar o app
-Troque os arquivos na hospedagem (ou envie para o GitHub, se ela estiver ligada ao repositório). Quem já instalou recebe a versão nova na próxima vez que abrir o app com internet. Se mudar algum arquivo guardado no celular (como os ícones), aumente o número em `CACHE = "agua-v1"` no `sw.js` para `agua-v2`.
+Troque os arquivos na hospedagem (ou envie para o GitHub, se ela estiver ligada ao repositório). Quem já instalou recebe a versão nova na próxima vez que abrir o app com internet. Se mudar algum arquivo guardado no celular (como os ícones), aumente o número em `CACHE = "agua-v2"` no `sw.js` para `agua-v3` (e assim por diante).
 
 ## Grupos e links de convite
 Qualquer pessoa pode criar uma conta. Depois de entrar, ela faz uma de duas coisas:
@@ -72,6 +72,7 @@ Detalhes:
 
 ## Atualizando um banco que já existe
 - **Meta diária por pessoa:** rode o `migracao-meta.sql` no SQL Editor **antes** de publicar o `index.html` novo. Quem cria o banco do zero com o `setup.sql` atual já recebe essa coluna.
+- **Ranking da semana/mês e streak:** rode o `migracao-ranking.sql` no SQL Editor **antes** de publicar o `index.html` novo. Quem cria o banco do zero com o `setup.sql` atual já recebe essa função.
 
 ## Segurança
 1. **Banco:** rode o `seguranca.sql` no SQL Editor (numa aba nova, só com ele), depois do `setup.sql`. Ele deixa as fotos privadas (só quem é do mesmo grupo vê, por links que expiram em 1 hora), impede foto "emprestada" de outro membro, bloqueia lançamentos de datas antigas, limita 6000 ml por pessoa por dia e cria as funções de sair do grupo e excluir a conta.

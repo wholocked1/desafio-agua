@@ -36,6 +36,7 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
 .mut{color:var(--mut);font-size:.85rem}
 #note{color:#d6453d;font-size:.85rem;text-align:center;min-height:1.2em}
 #note.ok{color:var(--ac)}
+.tabs{display:flex;gap:6px;margin-top:10px}.tabs button{flex:1;padding:8px 6px;background:transparent;color:var(--ac);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
 .gitem{width:100%;text-align:left;margin-top:8px}
 .code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px;margin-top:8px;font-size:.85rem}
 #proofs{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:8px}
@@ -139,7 +140,8 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
     </div>
 
     <div class="card">
-      <strong>Placar de hoje</strong> <span class="mut">(✅ = bateu a própria meta)</span>
+      <strong>Placar</strong> <span class="mut" id="boardHint">(✅ = bateu a própria meta · 🔥 = dias seguidos)</span>
+      <div class="tabs" id="tabs"><button data-p="day" class="on">Hoje</button><button data-p="week">Semana</button><button data-p="month">Mês</button></div>
       <div id="winner" class="mut" style="margin-top:8px" hidden></div>
       <div id="board"></div>
     </div>
@@ -186,7 +188,7 @@ const pad = n => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
 
 let day = today(), me = null, myName = "", myGoal = GOAL, winnerKey = "", logs = [], pending = 500, started = null, signup = false, channel = null;
-let myGroups = [], group = null, members = [];
+let myGroups = [], group = null, members = [], hist = [], period = "day", histKey = "";
 let bottle = parseInt(lsGet("agua-bottle"), 10) || 500;
 
 $("date").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
@@ -338,7 +340,7 @@ $("invNew").onclick = async () => {
 };
 
 function openGroup(g) {
-  group = g; lsSet("agua-group", g.id); logs = []; members = []; $("membersCard").hidden = true; note("");
+  group = g; lsSet("agua-group", g.id); logs = []; members = []; hist = []; histKey = ""; $("membersCard").hidden = true; note("");
   screen("app"); $("invBox").hidden = true;
   $("gTitle").textContent = g.name; $("who").textContent = myName;
   $("goal").value = myGoal; $("winner").hidden = true; winnerKey = "";
@@ -361,7 +363,7 @@ async function load() {
     .eq("group_id", gid).eq("day", day).order("created_at", { ascending: false });
   if (error) { note("Erro ao carregar: " + error.message); return; }
   if (!group || group.id !== gid) return; // trocou de grupo no meio do caminho
-  note(""); logs = data || []; render(); loadMembers(); loadWinner();
+  note(""); logs = data || []; render(); loadMembers(); loadWinner(); loadHistory();
 }
 
 const signed = {};
@@ -373,23 +375,80 @@ async function signPhotos(paths) {
   render();
 }
 
+function iso(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+function addDays(isoDay, n) { const [y, m, d] = isoDay.split("-").map(Number); const x = new Date(y, m - 1, d); x.setDate(x.getDate() + n); return iso(x); }
+function periodStart(p) {
+  const [y, m, d] = day.split("-").map(Number), x = new Date(y, m - 1, d);
+  if (p === "month") { x.setDate(1); return iso(x); }
+  if (p === "week") { x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return iso(x); } // semana começa na segunda
+  return day;
+}
+
+// nome e meta de cada pessoa (membros + registros de hoje)
+function people() {
+  const ppl = {};
+  members.forEach(m => { ppl[m.user_id] = { name: (m.profiles && m.profiles.name) || "?", goal: (m.profiles && m.profiles.goal_ml) || GOAL }; });
+  logs.forEach(l => { if (!ppl[l.user_id]) ppl[l.user_id] = { name: (l.profiles && l.profiles.name) || "?", goal: (l.profiles && l.profiles.goal_ml) || GOAL }; });
+  if (me && ppl[me.id]) { ppl[me.id].name = myName; ppl[me.id].goal = myGoal; }
+  return ppl;
+}
+
+// total por pessoa e dia: histórico do banco, com o dia de hoje sempre atualizado pelos registros ao vivo
+function dailyTotals() {
+  const t = {};
+  hist.forEach(h => { if (h.day !== day) (t[h.user_id] || (t[h.user_id] = {}))[h.day] = h.ml; });
+  logs.forEach(l => { const u = t[l.user_id] || (t[l.user_id] = {}); u[day] = (u[day] || 0) + l.ml; });
+  return t;
+}
+
+// dias seguidos batendo a meta; se hoje ainda não bateu, conta a partir de ontem (não zera no meio do dia)
+function streakOf(uid, totals, goal) {
+  const u = totals[uid] || {};
+  let d = (u[day] || 0) >= goal ? day : addDays(day, -1), n = 0;
+  while ((u[d] || 0) >= goal && n < 62) { n++; d = addDays(d, -1); }
+  return n;
+}
+
+async function loadHistory() {
+  if (!me || !group) return;
+  const gid = group.id, key = gid + "|" + day;
+  const since = [periodStart("month"), addDays(day, -62)].sort()[0];
+  const { data, error } = await sb.rpc("group_totals", { gid, since });
+  if (error) { if (histKey !== key) note("Ranking da semana/mês indisponível: rode o migracao-ranking.sql no Supabase."); return; }
+  if (!group || group.id !== gid) return;
+  histKey = key; hist = data || []; render();
+}
+
+document.querySelectorAll("#tabs button").forEach(btn => btn.onclick = () => {
+  period = btn.dataset.p;
+  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x === btn));
+  render();
+});
+
 function render() {
-  const tot = {};
-  logs.forEach(l => {
-    const t = tot[l.user_id] || (tot[l.user_id] = { name: (l.profiles && l.profiles.name) || "?", goal: (l.profiles && l.profiles.goal_ml) || GOAL, ml: 0 });
-    t.ml += l.ml;
-  });
-  const list = Object.values(tot).sort((a, b) => b.ml - a.ml);
+  const ppl = people(), totals = dailyTotals(), start = periodStart(period);
+  const rows = Object.keys(ppl).map(uid => {
+    const u = totals[uid] || {}, p = ppl[uid];
+    let ml = 0, hit = 0;
+    Object.keys(u).forEach(d => { if (d >= start && d <= day) { ml += u[d]; if (u[d] >= p.goal) hit++; } });
+    return { uid, name: p.name, goal: p.goal, ml, hit, streak: streakOf(uid, totals, p.goal) };
+  }).filter(r => r.ml > 0).sort((a, b) => b.ml - a.ml || b.streak - a.streak);
   const b = $("board"); b.textContent = "";
-  if (!list.length) { const p = document.createElement("p"); p.className = "mut"; p.textContent = "Ninguém bebeu nada ainda. Seja o primeiro!"; b.appendChild(p); }
-  const medals = ["🥇", "🥈", "🥉"], max = Math.max(GOAL, list.length ? list[0].ml : 0);
-  list.forEach((r, i) => {
+  if (!rows.length) {
+    const p = document.createElement("p"); p.className = "mut";
+    p.textContent = period === "day" ? "Ninguém bebeu nada ainda. Seja o primeiro!" : "Nenhum registro neste período ainda.";
+    b.appendChild(p);
+  }
+  const medals = ["🥇", "🥈", "🥉"], max = rows.length ? Math.max(rows[0].ml, period === "day" ? GOAL : 1) : 1;
+  rows.forEach((r, i) => {
     const w = document.createElement("div"); w.className = "row2";
     const pos = document.createElement("div"); pos.className = "pos"; pos.textContent = medals[i] || String(i + 1);
     const mid = document.createElement("div"); mid.style.flex = "1";
     const nm = document.createElement("div"); nm.className = "nm";
-    const a = document.createElement("span"); a.textContent = r.name + (r.ml >= r.goal ? " ✅" : "");
-    const c = document.createElement("span"); c.className = "mut"; c.textContent = r.ml + " / " + r.goal + " ml";
+    const a = document.createElement("span");
+    a.textContent = r.name + (period === "day" && r.ml >= r.goal ? " ✅" : "") + (r.streak >= 2 ? " 🔥" + r.streak : "");
+    const c = document.createElement("span"); c.className = "mut";
+    c.textContent = period === "day" ? r.ml + " / " + r.goal + " ml" : r.ml.toLocaleString("pt-BR") + " ml · ✅ " + r.hit + (r.hit === 1 ? " dia" : " dias");
     nm.append(a, c);
     const bar = document.createElement("div"); bar.className = "bar";
     const fill = document.createElement("i"); fill.style.width = Math.min(100, Math.round(r.ml / max * 100)) + "%";
@@ -516,7 +575,7 @@ $("saveName").onclick = async () => {
 async function loadMembers() {
   if (!me || !group) return;
   const gid = group.id;
-  const { data, error } = await sb.from("members").select("user_id,joined_at,profiles(name)").eq("group_id", gid);
+  const { data, error } = await sb.from("members").select("user_id,joined_at,profiles(name,goal_ml)").eq("group_id", gid);
   if (error || !group || group.id !== gid) return;
   members = data || []; renderMembers();
 }
@@ -528,7 +587,7 @@ function renderMembers() {
   $("mCount").textContent = members.length ? "(" + members.length + ")" : "";
   const box = $("mList"); box.textContent = "";
   if (!open) return;
-  const ml = {};
+  const ml = {}, totals = dailyTotals(), ppl = people();
   logs.forEach(l => { ml[l.user_id] = (ml[l.user_id] || 0) + l.ml; });
   const nameOf = m => (m.profiles && m.profiles.name) || "Sem nome";
   members.slice()
@@ -539,6 +598,8 @@ function renderMembers() {
       const nm = document.createElement("div"); nm.className = "nm";
       const a = document.createElement("span");
       a.textContent = nameOf(m) + (group.owner_id === m.user_id ? " 👑" : "") + (m.user_id === me.id ? " (você)" : "");
+      const st = streakOf(m.user_id, totals, (ppl[m.user_id] || {}).goal || GOAL);
+      if (st >= 1) a.textContent += " 🔥" + st;
       const c = document.createElement("span"); c.className = "mut"; c.textContent = (ml[m.user_id] || 0) + " ml hoje";
       nm.append(a, c);
       const sub = document.createElement("div"); sub.className = "mut";
