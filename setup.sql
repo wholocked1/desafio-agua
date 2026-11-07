@@ -392,3 +392,56 @@ create policy "ver avatares do grupo" on storage.objects
          end
     )
   );
+
+-- ========== 14) Várias garrafinhas e regras do grupo ==========
+-- ========== Várias garrafinhas (guardadas na conta, valem em todos os aparelhos) ==========
+alter table public.profiles
+  add column if not exists bottles jsonb not null default '[{"name": "Garrafinha", "ml": 500}]'::jsonb;
+
+alter table public.profiles drop constraint if exists profiles_bottles_ck;
+alter table public.profiles add constraint profiles_bottles_ck
+  check (jsonb_typeof(bottles) = 'array' and jsonb_array_length(bottles) between 1 and 6
+         and pg_column_size(bottles) < 2000);
+
+-- ========== Regras do grupo ==========
+alter table public.groups
+  add column if not exists require_photo boolean not null default false,
+  add column if not exists goal_ml int;   -- vazio = cada um usa a própria meta
+
+alter table public.groups drop constraint if exists groups_goal_ml_ck;
+alter table public.groups add constraint groups_goal_ml_ck
+  check (goal_ml is null or goal_ml between 500 and 10000);
+
+-- Só o dono muda as regras
+create or replace function public.set_group_rules(gid uuid, p_require_photo boolean, p_goal_ml int)
+returns public.groups
+language plpgsql security definer set search_path = public as $$
+declare g public.groups;
+begin
+  if not exists (select 1 from public.groups where id = gid and owner_id = auth.uid()) then
+    raise exception 'sem_permissao';
+  end if;
+  if p_goal_ml is not null and (p_goal_ml < 500 or p_goal_ml > 10000) then raise exception 'meta_invalida'; end if;
+  update public.groups set require_photo = coalesce(p_require_photo, false), goal_ml = p_goal_ml
+   where id = gid returning * into g;
+  return g;
+end $$;
+
+revoke execute on function public.set_group_rules(uuid, boolean, int) from public, anon;
+grant execute on function public.set_group_rules(uuid, boolean, int) to authenticated;
+
+-- Foto obrigatória: o banco recusa registro sem foto quando o grupo exige
+create or replace function public.check_group_rules() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.photo_path is null
+     and exists (select 1 from public.groups where id = new.group_id and require_photo) then
+    raise exception 'foto_obrigatoria';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists check_group_rules_before_insert on public.logs;
+create trigger check_group_rules_before_insert
+before insert on public.logs
+for each row execute function public.check_group_rules();

@@ -62,6 +62,10 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
 .swatches button.on{border-color:var(--tx)}
 .pf figcaption{display:flex;align-items:center;gap:4px}
 .win{align-items:center}.win>span:first-child{display:flex;align-items:center;gap:6px;flex:1;min-width:0}.win>span:first-child>span:last-child{min-width:0}
+.btgrid{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px}.btgrid.two{grid-template-columns:1fr 1fr}
+.btgrid button{padding:12px 6px;line-height:1.2}.btgrid button small{display:block;font-weight:500;opacity:.85;font-size:.8rem}
+.blist .nm{align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)}
+.chk{display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer}.chk input{width:auto;margin:0;flex:0 0 auto}
 .tabs{display:flex;gap:6px;margin-top:10px}.tabs button{flex:1;padding:8px 6px;background:transparent;color:var(--ac);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
 .gitem{width:100%;text-align:left;margin-top:8px}
 .code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px;margin-top:8px;font-size:.85rem}
@@ -130,9 +134,11 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
       <strong>Hidratação</strong>
       <label for="goal" class="mut" style="display:block;margin-top:8px">Sua meta diária (ml)</label>
       <div class="row"><input id="goal" type="number" min="500" max="10000" step="100" inputmode="numeric" style="margin-top:0"><button class="alt" id="saveGoal" style="flex:0 0 100px">Salvar</button></div>
-      <label for="bottle" class="mut" style="display:block;margin-top:12px">Tamanho da sua garrafinha (ml)</label>
-      <div class="row"><input id="bottle" type="number" min="50" max="5000" step="50" inputmode="numeric" style="margin-top:0"><button class="alt" id="saveBottle" style="flex:0 0 100px">Salvar</button></div>
-      <p class="mut" style="margin:8px 0 0">A meta aparece para o grupo. A garrafinha fica só neste aparelho.</p>
+      <div class="mut" style="margin-top:12px">Suas garrafinhas (até 6)</div>
+      <div class="blist" id="bList"></div>
+      <div class="row"><input id="bName" maxlength="20" placeholder="Nome (ex.: Copo do trabalho)" style="margin-top:0"><input id="bMl" type="number" min="50" max="5000" step="50" inputmode="numeric" placeholder="ml" style="margin-top:0;flex:0 0 90px"></div>
+      <div class="row"><button class="alt" id="bAdd">+ Adicionar garrafinha</button></div>
+      <p class="mut" style="margin:8px 0 0">A meta aparece para o grupo. As garrafinhas ficam na sua conta e valem em todos os seus aparelhos.</p>
     </div>
     <div class="card">
       <strong>Notificações</strong>
@@ -180,10 +186,24 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
       <div class="nm"><strong id="gTitle"></strong><span class="mut" id="who"></span></div>
       <div class="row"><button class="alt" id="invite">Convidar amigos</button><button class="alt" id="switchGroup">Trocar de grupo</button></div>
       <div class="row"><button class="alt" id="membersBtn">Ver membros</button><button class="alt" id="leave">Sair do grupo</button></div>
+      <div class="row" id="rulesRow" hidden><button class="alt" id="rulesBtn">⚙️ Regras do grupo</button></div>
+      <div class="mut" id="rulesLine" style="margin-top:10px" hidden></div>
       <div id="invBox" hidden>
         <div class="code" id="invLink"></div>
         <div class="row"><button id="invShare">Compartilhar link</button><button class="alt" id="invNew" hidden>Gerar novo código</button></div>
       </div>
+    </div>
+
+    <div class="card" id="rulesCard" hidden>
+      <strong>Regras do grupo</strong> <span class="mut">(só o dono muda)</span>
+      <label class="chk"><input type="checkbox" id="rPhoto"> Foto obrigatória em todos os registros</label>
+      <label for="rGoalMode" class="mut" style="display:block;margin-top:12px">Meta diária no placar deste grupo</label>
+      <select id="rGoalMode" style="margin-top:6px">
+        <option value="personal">Cada um usa a própria meta</option>
+        <option value="group">Mesma meta para todos</option>
+      </select>
+      <input id="rGoal" type="number" min="500" max="10000" step="100" inputmode="numeric" placeholder="Meta do grupo (ml)" hidden>
+      <div class="row"><button id="rSave">Salvar regras</button></div>
     </div>
 
     <div class="card" id="membersCard" hidden>
@@ -196,8 +216,8 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
       <div class="big" id="mine">0 ml</div>
       <div class="mut" id="goalLine" style="text-align:center"></div>
       <div class="bar" style="margin-top:6px"><i id="goalBar" style="width:0"></i></div>
-      <div class="row"><button id="bt">📸 Terminei a garrafinha</button></div>
-      <p class="mut" style="margin:6px 0 0">Tire uma foto com a garrafinha de cabeça para baixo para valer.</p>
+      <div class="btgrid" id="btBox"></div>
+      <p class="mut" id="photoHint" style="margin:6px 0 0">Tire uma foto com a garrafinha de cabeça para baixo para valer.</p>
       <input type="file" id="shot" accept="image/*" capture="environment" hidden>
       <div class="row"><button data-ml="200">+200</button><button data-ml="300">+300</button><button data-ml="500">+500</button></div>
       <div class="row"><button class="alt" id="undo">Desfazer último</button><button class="alt" id="custom">Outro valor</button></div>
@@ -258,7 +278,16 @@ const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d
 
 let day = today(), me = null, myName = "", myGoal = GOAL, myEmailFreq = "none", myReminder = 0, winnerKey = "", logs = [], pending = 500, started = null, signup = false, channel = null;
 let myGroups = [], group = null, members = [], reacts = {}, openLogs = {}, hist = [], period = "day", histKey = "";
-let bottle = parseInt(lsGet("agua-bottle"), 10) || 500;
+function cleanBottles(list) {
+  if (!Array.isArray(list)) return null;
+  const out = list.map(b => ({ name: String((b && b.name) || "").trim().slice(0, 20), ml: parseInt(b && b.ml, 10) }))
+    .filter(b => b.name && b.ml >= 50 && b.ml <= 5000).slice(0, 6);
+  return out.length ? out : null;
+}
+let bottles = (() => {
+  try { const c = cleanBottles(JSON.parse(lsGet("agua-bottles") || "null")); if (c) return c; } catch (e) {}
+  return [{ name: "Garrafinha", ml: parseInt(lsGet("agua-bottle"), 10) || 500 }];
+})();
 
 $("date").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
 
@@ -330,10 +359,12 @@ if (sb) sb.auth.onAuthStateChange((_ev, session) => {
 async function afterLogin() {
   let data = null;
   // tenta do mais completo ao mais simples (bancos sem alguma migração continuam funcionando)
-  for (const cols of ["name,goal_ml,email_freq,reminder_every,avatar_emoji,avatar_color,avatar_path", "name,goal_ml,email_freq,reminder_every", "name,goal_ml"]) {
+  for (const cols of ["name,goal_ml,email_freq,reminder_every,avatar_emoji,avatar_color,avatar_path,bottles", "name,goal_ml,email_freq,reminder_every,avatar_emoji,avatar_color,avatar_path", "name,goal_ml,email_freq,reminder_every", "name,goal_ml"]) {
     const r = await sb.from("profiles").select(cols).eq("id", me.id).maybeSingle();
     if (!r.error) { data = r.data; break; }
   }
+  const bs = cleanBottles(data && data.bottles);
+  if (bs) { bottles = bs; lsSet("agua-bottles", JSON.stringify(bottles)); }
   myAvatar = { emoji: (data && data.avatar_emoji) || null, color: (data && data.avatar_color) || null, path: (data && data.avatar_path) || null };
   myName = (data && data.name) || me.email.split("@")[0];
   myGoal = (data && data.goal_ml) || GOAL;
@@ -357,7 +388,8 @@ async function usePendingInvite() {
 }
 
 async function loadGroups() {
-  const { data, error } = await sb.from("members").select("groups(id,name,invite_code,owner_id)").eq("user_id", me.id);
+  let { data, error } = await sb.from("members").select("groups(id,name,invite_code,owner_id,require_photo,goal_ml)").eq("user_id", me.id);
+  if (error) ({ data, error } = await sb.from("members").select("groups(id,name,invite_code,owner_id)").eq("user_id", me.id)); // banco sem a migração de regras
   if (error) { note("Erro ao carregar grupos: " + error.message); return; }
   myGroups = (data || []).map(r => r.groups).filter(Boolean);
 }
@@ -421,7 +453,7 @@ function openGroup(g) {
   screen("app"); $("invBox").hidden = true;
   $("gTitle").textContent = g.name; $("who").textContent = myName;
   $("goal").value = myGoal; $("winner").hidden = true; winnerKey = "";
-  $("bottle").value = bottle; refreshBottleLabel();
+  $("rulesCard").hidden = true; renderBottleButtons(); renderRules();
   if (channel) sb.removeChannel(channel);
   channel = sb.channel("logs-" + g.id)
     .on("postgres_changes", { event: "*", schema: "public", table: "logs", filter: "group_id=eq." + g.id }, load)
@@ -430,7 +462,97 @@ function openGroup(g) {
 }
 
 // ---------- Placar ----------
-function refreshBottleLabel() { $("bt").textContent = "📸 Terminei a garrafinha (" + bottle + " ml)"; }
+// ---------- Garrafinhas ----------
+function renderBottleButtons() {
+  const box = $("btBox"); box.textContent = "";
+  box.classList.toggle("two", bottles.length > 1);
+  bottles.forEach(b => {
+    const bt = document.createElement("button");
+    bt.textContent = "📸 " + (bottles.length > 1 ? b.name : "Terminei a garrafinha");
+    const sm = document.createElement("small"); sm.textContent = b.ml + " ml"; bt.appendChild(sm);
+    bt.onclick = () => { pending = b.ml; $("shot").click(); };
+    box.appendChild(bt);
+  });
+}
+
+function renderBottleEditor() {
+  const box = $("bList"); box.textContent = "";
+  bottles.forEach((b, i) => {
+    const row = document.createElement("div"); row.className = "nm";
+    const tx = document.createElement("span"); tx.textContent = b.name + " · " + b.ml + " ml";
+    const del = document.createElement("button"); del.className = "chip danger"; del.textContent = "🗑️ Remover";
+    del.disabled = bottles.length === 1; del.title = bottles.length === 1 ? "Você precisa ter pelo menos uma" : "Remover";
+    del.onclick = () => saveBottles(bottles.filter((_, k) => k !== i));
+    row.append(tx, del); box.appendChild(row);
+  });
+  $("bAdd").disabled = bottles.length >= 6;
+}
+
+async function saveBottles(list) {
+  const clean = cleanBottles(list);
+  if (!clean) return;
+  const { error } = await sb.from("profiles").update({ bottles: clean }).eq("id", me.id);
+  if (error) {
+    note(/bottles/.test(error.message) ? "Para guardar as garrafinhas na conta, rode o migracao-garrafinhas-regras.sql. Por enquanto ficaram só neste aparelho."
+      : "Não consegui salvar: " + error.message);
+    if (!/bottles/.test(error.message)) return;
+  } else note("Garrafinhas salvas!", true);
+  bottles = clean; lsSet("agua-bottles", JSON.stringify(bottles));
+  renderBottleEditor(); renderBottleButtons();
+}
+
+$("bAdd").onclick = () => {
+  const name = $("bName").value.trim(), ml = parseInt($("bMl").value, 10);
+  if (!name) { note("Dê um nome para a garrafinha."); return; }
+  if (!(ml >= 50 && ml <= 5000)) { note("O tamanho deve ficar entre 50 e 5000 ml."); return; }
+  if (bottles.length >= 6) { note("Você já tem 6 garrafinhas. Remova uma para adicionar outra."); return; }
+  $("bName").value = ""; $("bMl").value = "";
+  saveBottles(bottles.concat([{ name, ml }]));
+};
+
+// ---------- Regras do grupo ----------
+const effGoal = personal => (group && group.goal_ml) ? group.goal_ml : personal;
+const photoRequired = () => REQUIRE_PHOTO_ALL || !!(group && group.require_photo);
+
+function renderRules() {
+  if (!group) return;
+  $("rulesRow").hidden = group.owner_id !== me.id;
+  const parts = [];
+  if (group.require_photo) parts.push("foto obrigatória em todo registro");
+  if (group.goal_ml) parts.push("meta de " + group.goal_ml + " ml para todos");
+  $("rulesLine").textContent = parts.length ? "📏 Regras do grupo: " + parts.join(" · ") : "";
+  $("rulesLine").hidden = !parts.length;
+  $("photoHint").textContent = photoRequired()
+    ? "Neste grupo, todo registro precisa de foto com a garrafinha de cabeça para baixo."
+    : "Tire uma foto com a garrafinha de cabeça para baixo para valer.";
+}
+
+$("rulesBtn").onclick = () => {
+  const c = $("rulesCard"); c.hidden = !c.hidden;
+  $("rPhoto").checked = !!group.require_photo;
+  $("rGoalMode").value = group.goal_ml ? "group" : "personal";
+  $("rGoal").value = group.goal_ml || myGoal; $("rGoal").hidden = !group.goal_ml;
+};
+$("rGoalMode").onchange = () => { $("rGoal").hidden = $("rGoalMode").value !== "group"; };
+$("rSave").onclick = async () => {
+  const goal = $("rGoalMode").value === "group" ? parseInt($("rGoal").value, 10) : null;
+  if (goal !== null && !(goal >= 500 && goal <= 10000)) { note("A meta do grupo deve ficar entre 500 e 10000 ml."); return; }
+  const { data, error } = await sb.rpc("set_group_rules", { gid: group.id, p_require_photo: $("rPhoto").checked, p_goal_ml: goal });
+  if (error) { note(/set_group_rules/.test(error.message) ? "Regras indisponíveis: rode o migracao-garrafinhas-regras.sql no Supabase." : "Não consegui salvar as regras: " + error.message); return; }
+  group.require_photo = data.require_photo; group.goal_ml = data.goal_ml;
+  const mg = myGroups.find(x => x.id === group.id); if (mg) { mg.require_photo = data.require_photo; mg.goal_ml = data.goal_ml; }
+  $("rulesCard").hidden = true; renderRules(); render(); note("Regras salvas!", true);
+};
+
+async function refreshRules() {
+  if (!group) return;
+  const gid = group.id;
+  const { data, error } = await sb.from("groups").select("require_photo,goal_ml,owner_id").eq("id", gid).maybeSingle();
+  if (error || !data || !group || group.id !== gid) return;
+  const changed = data.require_photo !== group.require_photo || data.goal_ml !== group.goal_ml || data.owner_id !== group.owner_id;
+  Object.assign(group, data);
+  if (changed) { renderRules(); render(); }
+}
 
 async function load() {
   if (!me || !group) return;
@@ -509,9 +631,9 @@ function avatarEl(uid, name, size) {
 // nome e meta de cada pessoa (membros + registros de hoje)
 function people() {
   const ppl = {};
-  members.forEach(m => { ppl[m.user_id] = { name: (m.profiles && m.profiles.name) || "?", goal: (m.profiles && m.profiles.goal_ml) || GOAL }; });
-  logs.forEach(l => { if (!ppl[l.user_id]) ppl[l.user_id] = { name: (l.profiles && l.profiles.name) || "?", goal: (l.profiles && l.profiles.goal_ml) || GOAL }; });
-  if (me && ppl[me.id]) { ppl[me.id].name = myName; ppl[me.id].goal = myGoal; }
+  members.forEach(m => { ppl[m.user_id] = { name: (m.profiles && m.profiles.name) || "?", goal: effGoal((m.profiles && m.profiles.goal_ml) || GOAL) }; });
+  logs.forEach(l => { if (!ppl[l.user_id]) ppl[l.user_id] = { name: (l.profiles && l.profiles.name) || "?", goal: effGoal((l.profiles && l.profiles.goal_ml) || GOAL) }; });
+  if (me && ppl[me.id]) { ppl[me.id].name = myName; ppl[me.id].goal = effGoal(myGoal); }
   return ppl;
 }
 
@@ -621,9 +743,10 @@ function render() {
     bar.appendChild(fill); mid.append(nm, bar); w.append(pos, avatarEl(r.uid, r.name, 30), mid); b.appendChild(w);
   });
   const mineMl = logs.filter(l => l.user_id === me.id).reduce((s, l) => s + l.ml, 0);
-  const pct = Math.min(100, Math.round(mineMl / myGoal * 100));
+  const gGoal = effGoal(myGoal);
+  const pct = Math.min(100, Math.round(mineMl / gGoal * 100));
   $("mine").textContent = mineMl + " ml";
-  $("goalLine").textContent = "Sua meta: " + myGoal + " ml · " + pct + "%" + (mineMl >= myGoal ? " ✅" : "");
+  $("goalLine").textContent = (group && group.goal_ml ? "Meta do grupo: " : "Sua meta: ") + gGoal + " ml · " + pct + "%" + (mineMl >= gGoal ? " ✅" : "");
   $("goalBar").style.width = pct + "%";
 
   const box = $("proofs"); box.textContent = "";
@@ -719,7 +842,7 @@ async function deleteAccount() {
     }
     const { error } = await sb.rpc("delete_my_account");
     if (error) throw error;
-    ["agua-group", "agua-invite", "agua-bottle"].forEach(lsDel);
+    ["agua-group", "agua-invite", "agua-bottle", "agua-bottles"].forEach(lsDel);
     try { await sb.auth.signOut({ scope: "local" }); } catch (e) {}
     note("Conta excluída.", true);
   } catch (e) { note("Não consegui excluir a conta: " + (e.message || e)); }
@@ -735,7 +858,7 @@ function showProfile() {
   avMode = myAvatar.path ? "photo" : myAvatar.emoji ? "emoji" : "initial";
   renderAvatarPicker();
   $("goal").value = myGoal;
-  $("bottle").value = bottle;
+  renderBottleEditor();
   $("emailFreq").value = myEmailFreq;
   $("reminder").value = String(myReminder);
   $("pushHint").textContent = pushHintText();
@@ -1050,6 +1173,7 @@ async function removeMember(m) {
 // ---------- Membros ----------
 async function loadMembers() {
   if (!me || !group) return;
+  refreshRules();
   const gid = group.id;
   let { data, error } = await sb.from("members").select("user_id,joined_at,profiles!user_id(name,goal_ml,avatar_emoji,avatar_color,avatar_path)").eq("group_id", gid);
   if (error) ({ data, error } = await sb.from("members").select("user_id,joined_at,profiles!user_id(name,goal_ml)").eq("group_id", gid)); // banco sem a migração de avatar
@@ -1143,6 +1267,7 @@ async function addLog(ml, blob) {
     if (path) sb.storage.from("proofs").remove([path]);
     note(/limite_diario/.test(error.message) ? "Limite diário de 6000 ml atingido. Por segurança, o app não registra mais que isso por dia."
       : /dia_invalido/.test(error.message) ? "Data inválida. Confira a data e a hora do seu aparelho."
+      : /foto_obrigatoria/.test(error.message) ? "Neste grupo, todo registro precisa de foto. Use um dos botões 📸."
       : "Não consegui salvar: " + error.message);
     return;
   }
@@ -1150,10 +1275,9 @@ async function addLog(ml, blob) {
 }
 
 function ask(ml) {
-  if (REQUIRE_PHOTO_ALL) { pending = ml; $("shot").click(); } else addLog(ml, null);
+  if (photoRequired()) { pending = ml; $("shot").click(); } else addLog(ml, null);
 }
 
-$("bt").onclick = () => { pending = bottle; $("shot").click(); };
 $("shot").onchange = async function () {
   const f = this.files && this.files[0]; this.value = "";
   if (!f) return;
@@ -1169,11 +1293,6 @@ $("undo").onclick = async () => {
   if (error) { note("Não consegui desfazer: " + error.message); return; }
   if (last.photo_path) await sb.storage.from("proofs").remove([last.photo_path]);
   await load();
-};
-$("saveBottle").onclick = () => {
-  const v = parseInt($("bottle").value, 10);
-  if (v > 0) { bottle = Math.min(5000, Math.max(50, v)); lsSet("agua-bottle", String(bottle)); }
-  $("bottle").value = bottle; refreshBottleLabel(); note("Garrafinha salva!", true);
 };
 
 // atualiza o placar de tempos em tempos (e vira o dia sozinho)

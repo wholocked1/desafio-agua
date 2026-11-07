@@ -75,6 +75,7 @@ Detalhes:
 
 ## Atualizando um banco que já existe
 - **Meta diária por pessoa:** rode o `migracao-meta.sql` no SQL Editor **antes** de publicar o `index.html` novo. Quem cria o banco do zero com o `setup.sql` atual já recebe essa coluna.
+- **Várias garrafinhas e regras do grupo:** rode o `migracao-garrafinhas-regras.sql` no SQL Editor **antes** de publicar o `index.html` novo.
 - **Avatar no perfil:** rode o `migracao-avatar.sql` no SQL Editor **antes** de publicar o `index.html` novo.
 - **Histórico e conquistas no Perfil:** rode o `migracao-perfil.sql` no SQL Editor **antes** de publicar o `index.html` novo.
 - **Reações e moderação:** rode o `migracao-reacoes-moderacao.sql` no SQL Editor **antes** de publicar o `index.html` novo.
