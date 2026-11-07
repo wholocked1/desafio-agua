@@ -6,7 +6,7 @@ App instalável no celular (PWA) feito de arquivos estáticos + Supabase para lo
 1. Crie uma conta e um projeto em supabase.com (o plano gratuito basta para um grupo de amigos).
 2. Abra **SQL Editor**, cole o conteúdo de `setup.sql` e clique em **Run**.
    Isso cria as tabelas, os grupos, as regras de segurança, o bucket de fotos e o tempo real.
-   Se você já tinha rodado uma versão anterior, leia o aviso no topo do `setup.sql` (há um bloco opcional que apaga tudo para recomeçar).
+   Ele é seguro para rodar de novo: não apaga dados.
 
 ## 2. Configurar o login
 - Em **Authentication → Providers → Email**, deixe o login por e-mail e senha ativo.
@@ -54,7 +54,7 @@ O site precisa estar em **https** (todas as hospedagens acima já entregam isso)
 - `REQUIRE_PHOTO_ALL` (no `config.js`): `true` exige foto também nos botões +200/+300/+500/Outro valor.
 
 ## Observações
-- Depois de rodar o `seguranca.sql`, as fotos ficam privadas: só membros do mesmo grupo as veem, por links que expiram.
+- As fotos são privadas: só membros do mesmo grupo as veem, por links que expiram em 1 hora.
 - Dá para apagar o histórico antigo quando quiser pelo **Table Editor** (tabela `logs`) e pelo **Storage** (bucket `proofs`).
 
 ## Instalar no celular (cada amigo faz uma vez)
@@ -86,16 +86,14 @@ Detalhes:
 - Uma pessoa pode estar em vários grupos e troca pelo botão **Trocar de grupo**.
 - A dona do grupo pode **Gerar novo código** se o link vazar. O link antigo deixa de funcionar, e quem já entrou continua no grupo.
 
-## Atualizando um banco que já existe
-- **Meta diária por pessoa:** rode o `migracao-meta.sql` no SQL Editor **antes** de publicar o `index.html` novo. Quem cria o banco do zero com o `setup.sql` atual já recebe essa coluna.
-- **Várias garrafinhas e regras do grupo:** rode o `migracao-garrafinhas-regras.sql` no SQL Editor **antes** de publicar o `index.html` novo.
-- **Avatar no perfil:** rode o `migracao-avatar.sql` no SQL Editor **antes** de publicar o `index.html` novo.
-- **Histórico e conquistas no Perfil:** rode o `migracao-perfil.sql` no SQL Editor **antes** de publicar o `index.html` novo.
-- **Reações e moderação:** rode o `migracao-reacoes-moderacao.sql` no SQL Editor **antes** de publicar o `index.html` novo.
-- **Ranking da semana/mês e streak:** rode o `migracao-ranking.sql` no SQL Editor **antes** de publicar o `index.html` novo. Quem cria o banco do zero com o `setup.sql` atual já recebe essa função.
+## Banco de dados
+Todo o banco está num arquivo só, o `setup.sql`, organizado em partes (tabelas, funções, gatilhos, regras de acesso, fotos).
+- **Projeto novo:** rode o `setup.sql` e depois o `agendar-envios.sql` (trocando a URL na linha marcada).
+- **Projeto que já existe:** não precisa rodar nada. Se rodar por engano, não tem problema: ele não apaga dados e só recria as funções e regras na versão atual.
+- As migrações antigas (`migracao-*.sql`, `seguranca.sql`) foram incorporadas ao `setup.sql` e podem ser apagadas do repositório.
 
 ## Segurança
-1. **Banco:** rode o `seguranca.sql` no SQL Editor (numa aba nova, só com ele), depois do `setup.sql`. Ele deixa as fotos privadas (só quem é do mesmo grupo vê, por links que expiram em 1 hora), impede foto "emprestada" de outro membro, bloqueia lançamentos de datas antigas, limita 6000 ml por pessoa por dia e cria as funções de sair do grupo e excluir a conta.
+1. **Banco:** o `setup.sql` já vem com as proteções: fotos privadas (só quem é do mesmo grupo vê, por links que expiram em 1 hora), nada de foto "emprestada" de outro membro, nada de lançar datas antigas, limite de 6000 ml por pessoa por dia, e cada pessoa só mexe nos próprios dados.
 2. **Hospedagem:** o `vercel.json` já manda cabeçalhos de segurança (política de conteúdo, bloqueio de iframe etc.). Se um dia você usar um domínio próprio no Supabase, inclua-o no `connect-src` e no `img-src` desse arquivo.
 3. **Supabase, Authentication:** em **Sign In / Providers → Email**, suba **Minimum password length** para 8 ou mais. **Não** ative o CAPTCHA (Attack Protection) por enquanto: ele exige mudanças no código do app e, ligado sem elas, bloqueia todos os cadastros e logins.
 4. **Chaves:** só a chave publishable/anon vai no site. A `secret`/`service_role` e a senha do banco nunca.

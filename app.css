@@ -60,6 +60,10 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
 .steps b{font-weight:600}
 .iwarn{background:rgba(245,180,0,.16);border:1px solid rgba(245,180,0,.45);border-radius:10px;padding:8px 10px;margin-top:10px;font-size:.9rem}
 .hbtns{display:flex;gap:6px;flex:0 0 auto}
+.qrbox{text-align:center;margin-top:12px}
+.qr{display:inline-block;background:#fff;padding:12px;border-radius:14px;border:1px solid var(--bd);line-height:0}
+.qr svg{width:200px;height:200px;display:block}
+.qrbox .mut{margin:6px 0 0}
 .tabs{display:flex;gap:6px;margin-top:10px}.tabs button{flex:1;padding:8px 6px;background:transparent;color:var(--ac);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
 .gitem{width:100%;text-align:left;margin-top:8px}
 .code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px;margin-top:8px;font-size:.85rem}

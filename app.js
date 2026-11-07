@@ -192,10 +192,60 @@ $("switchGroup").onclick = showGroups;
 
 function inviteUrl() { return location.origin + location.pathname + "?convite=" + group.invite_code; }
 
+// ---------- QR code do convite ----------
+// Sempre preto no branco (mesmo no tema escuro), que é o que as câmeras leem melhor.
+function qrSvg(text) {
+  const q = window.QRLib.make(text), n = q.size, b = 2, N = n + b * 2;
+  let d = "";
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.dark(r, c)) d += "M" + (c + b) + " " + (r + b) + "h1v1h-1z";
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + N + " " + N + '" shape-rendering="crispEdges"><rect width="' + N + '" height="' + N + '" fill="#fff"/><path d="' + d + '" fill="#10212e"/></svg>';
+}
+
+function renderInviteQR() {
+  const box = $("invQr");
+  try { box.innerHTML = qrSvg(inviteUrl()); } // o SVG é gerado pelo app a partir do link, sem dados digitados por ninguém
+  catch (e) { box.textContent = ""; $("invQrShare").hidden = true; }
+}
+
+// imagem pronta para mandar no WhatsApp ou postar: QR + nome do grupo
+function inviteQrPng() {
+  return new Promise((res, rej) => {
+    const q = window.QRLib.make(inviteUrl()), W = 720, H = 900, cell = Math.floor(520 / (q.size + 4));
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const g = c.getContext("2d");
+    g.fillStyle = "#1d8fe0"; g.fillRect(0, 0, W, H);
+    g.fillStyle = "#fff"; g.textAlign = "center";
+    g.font = "bold 46px system-ui, sans-serif"; g.fillText("💧 Desafio da Água", W / 2, 90);
+    g.font = "30px system-ui, sans-serif"; g.fillText(String(group.name).slice(0, 34), W / 2, 140);
+    const side = cell * (q.size + 4), x0 = (W - side) / 2, y0 = 190;
+    g.fillStyle = "#fff"; g.beginPath(); g.roundRect ? g.roundRect(x0 - 10, y0 - 10, side + 20, side + 20, 24) : g.rect(x0 - 10, y0 - 10, side + 20, side + 20); g.fill();
+    g.fillStyle = "#10212e";
+    for (let r = 0; r < q.size; r++) for (let k = 0; k < q.size; k++) if (q.dark(r, k)) g.fillRect(x0 + (k + 2) * cell, y0 + (r + 2) * cell, cell, cell);
+    g.fillStyle = "#fff"; g.font = "28px system-ui, sans-serif";
+    g.fillText("Aponte a câmera para entrar no grupo", W / 2, y0 + side + 70);
+    c.toBlob(b => b ? res(b) : rej(new Error("falha ao gerar a imagem")), "image/png");
+  });
+}
+
+$("invQrShare").onclick = async () => {
+  try {
+    const blob = await inviteQrPng(), file = new File([blob], "convite-desafio-da-agua.png", { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: "Desafio da Água", text: "Entra no meu grupo do Desafio da Água: " + group.name });
+      return;
+    }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = file.name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    note("Imagem do convite baixada.", true);
+  } catch (e) { if (e && e.name !== "AbortError") note("Não consegui gerar a imagem: " + (e.message || e)); }
+};
+
 $("invite").onclick = () => {
   const box = $("invBox"); box.hidden = !box.hidden;
   $("invLink").textContent = inviteUrl();
   $("invNew").hidden = group.owner_id !== me.id;
+  $("invNewRow").hidden = group.owner_id !== me.id;
+  if (!box.hidden) renderInviteQR();
 };
 $("invShare").onclick = async () => {
   const url = inviteUrl(), text = "Entra no meu grupo do Desafio da Água: " + group.name;
@@ -208,7 +258,7 @@ $("invNew").onclick = async () => {
   if (!confirm("Gerar um novo código? O link antigo deixa de funcionar.")) return;
   const { data, error } = await sb.rpc("regenerate_invite", { gid: group.id });
   if (error) { note("Não consegui gerar o código: " + error.message); return; }
-  group.invite_code = data; $("invLink").textContent = inviteUrl(); note("Novo link gerado.", true);
+  group.invite_code = data; $("invLink").textContent = inviteUrl(); renderInviteQR(); note("Novo link gerado: o QR code também mudou.", true);
 };
 
 function openGroup(g) {

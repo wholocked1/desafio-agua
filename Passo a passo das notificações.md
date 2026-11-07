@@ -11,7 +11,7 @@ Faça no computador, nesta ordem. Os nomes dos botões do Supabase podem variar 
 No `config.js`, preencha `VAPID_PUBLIC_KEY` com a chave **pública** (mantendo as aspas).
 
 ## 3. Preparar o banco
-No **SQL Editor**, numa aba nova, cole só o `migracao-notificacoes.sql` e rode.
+Num projeto novo, o `setup.sql` já cria tudo o que as notificações precisam. Se o seu banco já existe e o app está funcionando, pule este passo.
 
 ## 4. Criar a função de envio
 1. No Supabase, abra **Edge Functions** e clique em **Deploy a new function → Via Editor**.
@@ -35,7 +35,7 @@ Envie o `index.html`, o `config.js` e o `sw.js` para o GitHub e espere o Vercel 
 1. **E-mail:** no app, abra o **Perfil** e toque em **Me mandar um resumo**. Deve chegar um e-mail com o ranking desta semana até agora (confira o spam).
 2. **Lembretes:** no iPhone, abra o app **pelo ícone da Tela de Início**. No Perfil, escolha **A cada 2 horas**, toque em **Salvar** e permita as notificações. Depois toque em **Testar notificação**.
 
-Se aparecer erro, anote a mensagem do rodapé e consulte o registro no SQL Editor (precisa ter rodado o `migracao-log.sql`):
+Se aparecer erro, anote a mensagem do rodapé e consulte o registro no SQL Editor (a tabela de registro já vem no `setup.sql`):
 ```sql
 select created_at at time zone 'America/Sao_Paulo' as quando, kind, status, detail
   from public.notify_log order by id desc limit 30;

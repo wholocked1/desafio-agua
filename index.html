@@ -148,8 +148,10 @@
       <div class="row" id="rulesRow" hidden><button class="alt" id="rulesBtn">⚙️ Regras do grupo</button></div>
       <div class="mut" id="rulesLine" style="margin-top:10px" hidden></div>
       <div id="invBox" hidden>
+        <div class="qrbox"><div id="invQr" class="qr" role="img" aria-label="QR code do convite"></div><p class="mut">Peça para o amigo apontar a câmera do celular</p></div>
         <div class="code" id="invLink"></div>
-        <div class="row"><button id="invShare">Compartilhar link</button><button class="alt" id="invNew" hidden>Gerar novo código</button></div>
+        <div class="row"><button id="invShare">Compartilhar link</button><button class="alt" id="invQrShare">Compartilhar QR</button></div>
+        <div class="row" id="invNewRow"><button class="alt" id="invNew" hidden>Gerar novo código</button></div>
       </div>
     </div>
 
@@ -200,6 +202,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
 <script src="/config.js"></script>
+<script src="/qrcode.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
