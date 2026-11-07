@@ -27,13 +27,26 @@ Esses valores são públicos por design: quem protege os dados são as regras do
 
 Nas próximas atualizações do app, troque só o `index.html` (e os outros arquivos que mudarem) e **mantenha o seu `config.js`**.
 
+## Estrutura dos arquivos
+| Arquivo | O que tem | Quando mexer |
+|---|---|---|
+| `index.html` | a estrutura das telas | ao mudar textos ou telas |
+| `app.css` | o visual (cores, tamanhos, espaçamentos) | ao mudar a aparência |
+| `app.js` | a lógica do app | ao mudar o funcionamento |
+| `config.js` | URL e chaves públicas, meta padrão | uma vez, na configuração |
+| `sw.js` | o que deixa o app instalável e os lembretes | raramente |
+| `vercel.json` | regras de segurança da hospedagem | raramente |
+
+O `index.html` não tem mais JavaScript dentro. Por isso a política de segurança do `vercel.json` bloqueia qualquer script embutido na página, o que protege contra injeção de código.
+Se você adicionar algum `<script>` direto no HTML, ele será bloqueado: coloque o código no `app.js`.
+
 ## 4. Hospedar
 Qualquer hospedagem de site estático serve, por exemplo:
 - **Netlify Drop** (arrasta a pasta em app.netlify.com/drop)
 - **Cloudflare Pages** ou **GitHub Pages**
 - **Vercel**
 
-Envie **todos os arquivos da pasta** (`index.html`, `config.js`, `manifest.webmanifest`, `sw.js` e os 3 ícones `.png`) e pronto. Mande o link para os amigos.
+Envie **todos os arquivos da pasta** (`index.html`, `app.css`, `app.js`, `config.js`, `manifest.webmanifest`, `sw.js`, `vercel.json` e os 3 ícones `.png`) e pronto. Mande o link para os amigos.
 O site precisa estar em **https** (todas as hospedagens acima já entregam isso), senão o app não instala nem abre a câmera.
 
 ## Ajustes rápidos
