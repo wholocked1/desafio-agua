@@ -66,6 +66,14 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
 .btgrid button{padding:12px 6px;line-height:1.2}.btgrid button small{display:block;font-weight:500;opacity:.85;font-size:.8rem}
 .blist .nm{align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)}
 .chk{display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer}.chk input{width:auto;margin:0;flex:0 0 auto}
+.steps{list-style:none;counter-reset:st;padding:0;margin:12px 0 0}
+.steps li{counter-increment:st;position:relative;padding:4px 0 12px 38px;line-height:1.45}
+.steps li::before{content:counter(st);position:absolute;left:0;top:2px;width:26px;height:26px;border-radius:50%;background:var(--ac);color:#fff;font-weight:700;font-size:.85rem;display:flex;align-items:center;justify-content:center}
+.steps .ic{display:inline-flex;align-items:center;justify-content:center;vertical-align:-4px;min-width:24px;height:24px;padding:0 4px;border:1px solid var(--bd);border-radius:7px;background:var(--bg);color:var(--ac);font-weight:700}
+.steps .ic svg{width:16px;height:16px}
+.steps b{font-weight:600}
+.iwarn{background:rgba(245,180,0,.16);border:1px solid rgba(245,180,0,.45);border-radius:10px;padding:8px 10px;margin-top:10px;font-size:.9rem}
+.hbtns{display:flex;gap:6px;flex:0 0 auto}
 .tabs{display:flex;gap:6px;margin-top:10px}.tabs button{flex:1;padding:8px 6px;background:transparent;color:var(--ac);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
 .gitem{width:100%;text-align:left;margin-top:8px}
 .code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px;margin-top:8px;font-size:.85rem}
@@ -79,7 +87,10 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
 <main>
   <div class="nm" style="align-items:center">
     <h1>💧 Desafio da Água</h1>
-    <button class="alt" id="profileBtn" style="flex:0 0 auto;padding:8px 12px" hidden>👤 Perfil</button>
+    <div class="hbtns">
+      <button class="alt" id="installBtn" style="padding:8px 10px" hidden>📲 Instalar</button>
+      <button class="alt" id="profileBtn" style="padding:8px 12px" hidden>👤 Perfil</button>
+    </div>
   </div>
   <p class="sub" id="date"></p>
 
@@ -109,6 +120,21 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
       <strong>Entrar com um código</strong>
       <input id="gCode" maxlength="40" placeholder="Código do convite" autocomplete="off" autocapitalize="off">
       <div class="row"><button class="alt" id="gJoin">Entrar no grupo</button></div>
+    </div>
+  </section>
+
+  <!-- INSTALAR -->
+  <section id="install" hidden>
+    <div class="row" style="margin-top:0;margin-bottom:12px"><button class="alt" id="iBack" style="flex:0 0 auto;padding:8px 14px">← Voltar</button></div>
+    <div class="card">
+      <strong>📲 Coloque o app na tela do celular</strong>
+      <p class="mut" style="margin:6px 0 0">Instalado, o Desafio da Água abre em tela cheia, com o ícone da gota, e pode mandar lembretes para beber água.</p>
+      <div class="tabs" id="iTabs"><button data-os="ios">iPhone</button><button data-os="android">Android</button><button data-os="desktop">Computador</button></div>
+      <div class="iwarn" id="iWarn" hidden></div>
+      <div class="row" id="iNowRow" hidden><button id="iNow">📲 Instalar agora</button></div>
+      <ol class="steps" id="iSteps"></ol>
+      <div class="row" id="iCopyRow" hidden><button class="alt" id="iCopy">🔗 Copiar link do app</button></div>
+      <p class="mut" id="iDone" style="margin:10px 0 0" hidden>✅ O app já está instalado e aberto pelo ícone. Tudo certo!</p>
     </div>
   </section>
 
@@ -175,6 +201,7 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
     </div>
     <div class="card">
       <strong>Conta</strong>
+      <div class="row"><button class="alt" id="pInstall">📲 Como instalar o app no celular</button></div>
       <div class="row"><button class="alt" id="logout">Sair da conta</button></div>
       <div class="row"><button class="alt" id="delAcc" style="color:#d6453d">Excluir minha conta</button></div>
     </div>
@@ -297,9 +324,11 @@ if (inviteParam) lsSet("agua-invite", inviteParam);
 
 let lastScreen = "groups";
 function screen(name) {
-  ["auth", "groups", "app", "profile"].forEach(s => $(s).hidden = s !== name);
-  if (name !== "profile") lastScreen = name;
-  $("profileBtn").hidden = name === "auth" || name === "profile";
+  ["auth", "groups", "app", "profile", "install"].forEach(s => $(s).hidden = s !== name);
+  if (name !== "profile" && name !== "install") lastScreen = name;
+  $("profileBtn").hidden = name === "auth" || name === "profile" || name === "install";
+  updateInstallBtn(name);
+  window.scrollTo(0, 0);
 }
 
 // ---------- Login ----------
@@ -375,6 +404,7 @@ async function afterLogin() {
   const saved = lsGet("agua-group");
   const g = myGroups.find(x => x.id === saved) || (myGroups.length === 1 ? myGroups[0] : null);
   if (g) openGroup(g); else showGroups();
+  maybeShowInstallOnce();
 }
 
 async function usePendingInvite() {
@@ -956,15 +986,119 @@ function renderProfileStats(rows) {
     el.append(i, n, p); $("badges").appendChild(el);
   });
 }
-$("pBack").onclick = () => { if (lastScreen === "app" && group) openGroup(group); else showGroups(); };
+$("pBack").onclick = goBack;
+function goBack() {
+  if (lastScreen === "app" && group) openGroup(group);
+  else if (lastScreen === "auth" || !me) screen("auth");
+  else showGroups();
+}
 
 // ---------- Notificações ----------
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const isStandalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+
+// ---------- Tutorial de instalação ----------
+const UA = navigator.userAgent;
+const isAndroid = /android/i.test(UA);
+const isMobile = isIOS || isAndroid;
+const inAppBrowser = /Instagram|FBAN|FBAV|FB_IAB|Line\/|Twitter|TikTok|musical_ly|Snapchat|LinkedInApp/i.test(UA);
+const iosSafari = isIOS && !/CriOS|FxiOS|EdgiOS|OPiOS|GSA\//i.test(UA) && !inAppBrowser;
+const samsung = /SamsungBrowser/i.test(UA);
+let deferredInstall = null, installOs = isIOS ? "ios" : isAndroid ? "android" : "desktop";
+
+const IC = {
+  share: '<span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/></svg></span>',
+  plus: '<span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></svg></span>',
+  dots: '<span class="ic">⋯</span>',
+  kebab: '<span class="ic">⋮</span>',
+  burger: '<span class="ic">☰</span>',
+  monitor: '<span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 7v6M9 10l3 3 3-3M8 20h8"/></svg></span>'
+};
+
+// textos fixos do app (não contêm dados de usuário)
+const INSTALL_STEPS = {
+  ios: [
+    "Abra este link no <b>Safari</b>.",
+    "Toque no botão <b>Compartilhar</b> " + IC.share + ". Ele fica na barra de baixo ou dentro do menu " + IC.dots + " ao lado do endereço.",
+    "Role a lista e toque em <b>Adicionar à Tela de Início</b> " + IC.plus + ".",
+    "Deixe ligada a opção <b>Abrir como App Web</b>, se aparecer, e toque em <b>Adicionar</b>.",
+    "Abra o app sempre pelo ícone da gota 💧 na Tela de Início."
+  ],
+  android: samsung ? [
+    "Toque no menu " + IC.burger + " na barra de baixo.",
+    "Toque em <b>Adicionar página a</b> e escolha <b>Tela inicial</b>.",
+    "Confirme em <b>Adicionar</b>.",
+    "Abra o app pelo ícone da gota 💧 na tela inicial."
+  ] : [
+    "Abra este link no <b>Chrome</b>.",
+    "Toque no menu " + IC.kebab + " no canto de cima.",
+    "Toque em <b>Instalar app</b> (ou <b>Adicionar à tela inicial</b>).",
+    "Confirme em <b>Instalar</b>.",
+    "Abra o app pelo ícone da gota 💧 na tela inicial."
+  ],
+  desktop: [
+    "O app foi feito para o celular: o melhor é instalar lá (escolha iPhone ou Android acima).",
+    "No computador, use o <b>Chrome</b> ou o <b>Edge</b> e clique no ícone de instalar " + IC.monitor + " no fim da barra de endereço.",
+    "Se o ícone não aparecer, abra o menu " + IC.kebab + " e procure <b>Instalar Desafio da Água</b> (no Edge: <b>Aplicativos → Instalar este site</b>).",
+    "No Safari do Mac, use o menu <b>Arquivo → Adicionar ao Dock</b>."
+  ]
+};
+
+function updateInstallBtn(name) {
+  $("installBtn").hidden = isStandalone || !isMobile || name === "install" || name === "profile";
+}
+
+function renderInstall() {
+  document.querySelectorAll("#iTabs button").forEach(b => b.classList.toggle("on", b.dataset.os === installOs));
+  const here = installOs === (isIOS ? "ios" : isAndroid ? "android" : "desktop");
+  let warn = "";
+  if (here && inAppBrowser) warn = "Você abriu o link dentro de outro app (Instagram, Facebook...). Toque no menu " + (isIOS ? IC.dots : IC.kebab) + " e escolha <b>Abrir no " + (isIOS ? "Safari" : "navegador") + "</b>, ou copie o link e cole no " + (isIOS ? "Safari" : "Chrome") + ".";
+  else if (here && isIOS && !iosSafari) warn = "No iPhone, a instalação funciona melhor pelo <b>Safari</b> (em outros navegadores o ícone pode aparecer como uma letra). Copie o link e abra no Safari.";
+  $("iWarn").innerHTML = warn; $("iWarn").hidden = !warn;
+  $("iCopyRow").hidden = !(warn || !here);
+  $("iNowRow").hidden = !(here && deferredInstall);
+  $("iDone").hidden = !(here && isStandalone);
+  $("iSteps").innerHTML = INSTALL_STEPS[installOs].map(t => "<li>" + t + "</li>").join("");
+  $("iSteps").hidden = here && isStandalone;
+}
+
+function showInstall() { screen("install"); note(""); renderInstall(); }
+
+document.querySelectorAll("#iTabs button").forEach(b => b.onclick = () => { installOs = b.dataset.os; renderInstall(); });
+$("installBtn").onclick = showInstall;
+$("pInstall").onclick = showInstall;
+$("iBack").onclick = goBack;
+$("iCopy").onclick = async () => {
+  const url = location.origin + location.pathname + location.search;
+  try { await navigator.clipboard.writeText(url); note("Link copiado! Cole no " + (installOs === "ios" ? "Safari" : "navegador") + ".", true); }
+  catch (e) { note("Copie este link: " + url); }
+};
+$("iNow").onclick = async () => {
+  if (!deferredInstall) return;
+  deferredInstall.prompt();
+  try { await deferredInstall.userChoice; } catch (e) {}
+  deferredInstall = null; renderInstall();
+};
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault(); deferredInstall = e;
+  if (!$("install").hidden) renderInstall();
+});
+window.addEventListener("appinstalled", () => {
+  deferredInstall = null; lsSet("agua-install-seen", "1");
+  note("App instalado! Abra pelo ícone da gota 💧 na tela inicial.", true);
+  if (!$("install").hidden) renderInstall();
+});
+
+// mostra o tutorial uma vez, na primeira entrada pelo navegador do celular
+function maybeShowInstallOnce() {
+  if (isStandalone || !isMobile || lsGet("agua-install-seen")) return;
+  lsSet("agua-install-seen", "1");
+  setTimeout(showInstall, 400);
+}
 const vapidReady = () => VAPID_PUBLIC_KEY.length > 40 && !/COLE_AQUI/.test(VAPID_PUBLIC_KEY);
 
 function pushHintText() {
-  if (isIOS && !isStandalone) return "No iPhone, os lembretes só funcionam com o app instalado na Tela de Início e aberto pelo ícone.";
+  if (isIOS && !isStandalone) return "No iPhone, os lembretes só funcionam com o app instalado na Tela de Início e aberto pelo ícone. Veja como em Conta → Como instalar o app.";
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return "Este navegador não aceita notificações.";
   if (Notification.permission === "denied") return "As notificações estão bloqueadas para este app. Libere nos ajustes do celular/navegador.";
   return "Os lembretes chegam em cada aparelho onde você ativar.";
