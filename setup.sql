@@ -343,3 +343,52 @@ create table if not exists public.notify_log (
 );
 create index if not exists notify_log_created_idx on public.notify_log(created_at desc);
 alter table public.notify_log enable row level security;
+
+-- ========== 13) Avatar no perfil ==========
+-- ========== Campos no perfil ==========
+alter table public.profiles
+  add column if not exists avatar_emoji text,
+  add column if not exists avatar_color text,
+  add column if not exists avatar_path text;
+
+alter table public.profiles drop constraint if exists profiles_avatar_emoji_ck;
+alter table public.profiles add constraint profiles_avatar_emoji_ck
+  check (avatar_emoji is null or char_length(avatar_emoji) between 1 and 8);
+alter table public.profiles drop constraint if exists profiles_avatar_color_ck;
+alter table public.profiles add constraint profiles_avatar_color_ck
+  check (avatar_color is null or avatar_color ~ '^#[0-9a-f]{6}$');
+-- a foto precisa estar na pasta da própria pessoa
+alter table public.profiles drop constraint if exists profiles_avatar_path_ck;
+alter table public.profiles add constraint profiles_avatar_path_ck
+  check (avatar_path is null or avatar_path like id::text || '/%');
+
+-- ========== Fotos de perfil (privadas: só quem está num grupo com a pessoa vê) ==========
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars', 'avatars', false, 524288, array['image/jpeg'])
+on conflict (id) do update
+  set public = false, file_size_limit = 524288, allowed_mime_types = array['image/jpeg'];
+
+drop policy if exists "enviar avatar na propria pasta" on storage.objects;
+create policy "enviar avatar na propria pasta" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "apagar proprio avatar" on storage.objects;
+create policy "apagar proprio avatar" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "ver avatares do grupo" on storage.objects;
+create policy "ver avatares do grupo" on storage.objects
+  for select to authenticated
+  using (
+    bucket_id = 'avatars'
+    and (
+      (storage.foldername(name))[1] = auth.uid()::text
+      or case
+           when (storage.foldername(name))[1] ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+           then public.shares_group(((storage.foldername(name))[1])::uuid)
+           else false
+         end
+    )
+  );

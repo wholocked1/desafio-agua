@@ -49,7 +49,19 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
 .badges{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:10px}
 .badge{border:1px solid var(--bd);border-radius:12px;padding:8px;text-align:center;font-size:.75rem;background:var(--bg)}
 .badge .ic{font-size:1.6rem;display:block}.badge.off{opacity:.45}.badge.off .ic{filter:grayscale(1)}
-.wins{display:flex;flex-direction:column;gap:4px}.win{display:flex;justify-content:space-between;gap:8px;font-size:.85rem;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:6px 10px}.win span:last-child{color:var(--mut);white-space:nowrap}
+.wins{display:flex;flex-direction:column;gap:4px}.win{display:flex;justify-content:space-between;gap:8px;font-size:.85rem;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:6px 10px}.win>span:last-child{color:var(--mut);white-space:nowrap}
+.av{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;font-weight:700;overflow:hidden;line-height:1;user-select:none}
+.av img{width:100%;height:100%;object-fit:cover;display:block}
+.avs{display:inline-flex}.avs .av+.av{margin-left:-6px;box-shadow:0 0 0 2px var(--card)}
+.avtop{display:flex;align-items:center;gap:12px;margin-top:10px}
+.emogrid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:10px}
+.emogrid button{padding:6px 0;font-size:1.25rem;background:transparent;border:1px solid var(--bd);color:var(--tx)}
+.emogrid button.on{border-color:var(--ac);background:var(--ac2)}
+.swatches{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.swatches button{width:30px;height:30px;padding:0;border-radius:50%;border:2px solid transparent}
+.swatches button.on{border-color:var(--tx)}
+.pf figcaption{display:flex;align-items:center;gap:4px}
+.win{align-items:center}.win>span:first-child{display:flex;align-items:center;gap:6px;flex:1;min-width:0}.win>span:first-child>span:last-child{min-width:0}
 .tabs{display:flex;gap:6px;margin-top:10px}.tabs button{flex:1;padding:8px 6px;background:transparent;color:var(--ac);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
 .gitem{width:100%;text-align:left;margin-top:8px}
 .code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px;margin-top:8px;font-size:.85rem}
@@ -101,7 +113,16 @@ button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
     <div class="row" style="margin-top:0;margin-bottom:12px"><button class="alt" id="pBack" style="flex:0 0 auto;padding:8px 14px">← Voltar</button></div>
     <div class="card">
       <strong>Seu perfil</strong>
-      <div class="mut" id="pEmail" style="margin-top:4px"></div>
+      <div class="avtop"><span id="avPreview"></span><div><div id="avName" style="font-weight:600"></div><div class="mut" id="pEmail"></div></div></div>
+      <div class="mut" style="margin-top:12px">Seu avatar</div>
+      <div class="tabs" id="avTabs"><button data-m="initial">Inicial</button><button data-m="emoji">Emoji</button><button data-m="photo">Foto</button></div>
+      <div id="avEmojiBox" hidden><div class="emogrid" id="avEmojis"></div></div>
+      <div id="avColorBox"><div class="mut" style="margin-top:10px">Cor de fundo</div><div class="swatches" id="avColors"></div></div>
+      <div id="avPhotoBox" hidden>
+        <div class="row"><button class="alt" id="avPick">📷 Escolher foto</button></div>
+        <p class="mut" style="margin:6px 0 0">Só quem está num grupo com você vê a sua foto.</p>
+        <input type="file" id="avFile" accept="image/*" hidden>
+      </div>
       <label for="pName" class="mut" style="display:block;margin-top:12px">Nome que aparece no placar</label>
       <div class="row"><input id="pName" maxlength="30" style="margin-top:0"><button class="alt" id="saveName" style="flex:0 0 100px">Salvar</button></div>
     </div>
@@ -307,8 +328,13 @@ if (sb) sb.auth.onAuthStateChange((_ev, session) => {
 
 // ---------- Grupos ----------
 async function afterLogin() {
-  let { data, error } = await sb.from("profiles").select("name,goal_ml,email_freq,reminder_every").eq("id", me.id).maybeSingle();
-  if (error) ({ data } = await sb.from("profiles").select("name,goal_ml").eq("id", me.id).maybeSingle()); // banco sem a migração de notificações
+  let data = null;
+  // tenta do mais completo ao mais simples (bancos sem alguma migração continuam funcionando)
+  for (const cols of ["name,goal_ml,email_freq,reminder_every,avatar_emoji,avatar_color,avatar_path", "name,goal_ml,email_freq,reminder_every", "name,goal_ml"]) {
+    const r = await sb.from("profiles").select(cols).eq("id", me.id).maybeSingle();
+    if (!r.error) { data = r.data; break; }
+  }
+  myAvatar = { emoji: (data && data.avatar_emoji) || null, color: (data && data.avatar_color) || null, path: (data && data.avatar_path) || null };
   myName = (data && data.name) || me.email.split("@")[0];
   myGoal = (data && data.goal_ml) || GOAL;
   myEmailFreq = (data && data.email_freq) || "none";
@@ -435,6 +461,51 @@ function periodStart(p) {
   return day;
 }
 
+// ---------- Avatares ----------
+const AV_COLORS = ["#1d6fb8", "#0f7a70", "#6a4fc4", "#a8418f", "#b4511a", "#3a7329", "#7d6311", "#475569"];
+const AV_EMOJIS = ["🐳", "🐬", "🐙", "🦦", "🐧", "🐸", "🦊", "🐼", "🐨", "🦁", "🐯", "🐰", "🌵", "🌻", "🍉", "🍋", "⚡", "🔥", "🌊", "💧", "🚀", "🎧", "⚽", "🏃"];
+let avatars = {}, myAvatar = { emoji: null, color: null, path: null };
+const avSigned = {}, avQueue = new Set();
+let avTimer = null;
+
+function hashColor(uid) { let h = 0; for (const c of String(uid)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return AV_COLORS[h % AV_COLORS.length]; }
+function avatarOf(uid) { return me && uid === me.id ? myAvatar : (avatars[uid] || {}); }
+
+function queueAvatar(path) {
+  const sg = avSigned[path];
+  if (sg && sg.exp > Date.now()) return;
+  avSigned[path] = { url: "", exp: Date.now() + 30000 }; // evita repetir enquanto carrega (ou se falhar)
+  avQueue.add(path);
+  if (!avTimer) avTimer = setTimeout(signAvatars, 0);
+}
+async function signAvatars() {
+  avTimer = null;
+  const paths = [...avQueue]; avQueue.clear();
+  if (!paths.length) return;
+  const { data, error } = await sb.storage.from("avatars").createSignedUrls(paths, 3600);
+  if (!error && data) data.forEach(d => { if (d.signedUrl && d.path) avSigned[d.path] = { url: d.signedUrl, exp: Date.now() + 3300000 }; });
+  if (group && !$("app").hidden) render();
+  if (!$("profile").hidden) renderAvatarPicker();
+}
+
+function avatarEl(uid, name, size) {
+  size = size || 28;
+  const a = avatarOf(uid), el = document.createElement("span");
+  el.className = "av"; el.style.width = el.style.height = size + "px"; el.setAttribute("aria-hidden", "true");
+  el.style.background = a.color || hashColor(uid);
+  if (a.path) {
+    const sg = avSigned[a.path];
+    if (sg && sg.url && sg.exp > Date.now()) {
+      const im = document.createElement("img"); im.src = sg.url; im.alt = ""; el.appendChild(im); return el;
+    }
+    queueAvatar(a.path); // enquanto a foto carrega, mostra emoji ou inicial
+  }
+  if (a.emoji) { el.textContent = a.emoji; el.style.fontSize = Math.round(size * 0.58) + "px"; return el; }
+  el.textContent = (String(name || "?").trim().charAt(0) || "?").toUpperCase();
+  el.style.fontSize = Math.round(size * 0.46) + "px";
+  return el;
+}
+
 // nome e meta de cada pessoa (membros + registros de hoje)
 function people() {
   const ppl = {};
@@ -478,15 +549,15 @@ document.querySelectorAll("#tabs button").forEach(btn => btn.onclick = () => {
 
 // vencedor(es) de um período fechado: quem bebeu mais (empates aparecem juntos)
 function winnersOf(start, end, ppl, totals) {
-  let top = 0, names = [];
+  let top = 0, names = [], uids = [];
   Object.keys(totals).forEach(uid => {
     let ml = 0;
     Object.keys(totals[uid]).forEach(d => { if (d >= start && d <= end) ml += totals[uid][d]; });
     if (ml <= 0) return;
     const nm = (ppl[uid] || {}).name || "?";
-    if (ml > top) { top = ml; names = [nm]; } else if (ml === top) names.push(nm);
+    if (ml > top) { top = ml; names = [nm]; uids = [uid]; } else if (ml === top) { names.push(nm); uids.push(uid); }
   });
-  return top ? { names, ml: top } : null;
+  return top ? { names, uids, ml: top } : null;
 }
 
 function renderWinners(ppl, totals) {
@@ -508,7 +579,11 @@ function renderWinners(ppl, totals) {
   const list = document.createElement("div"); list.className = "wins";
   items.forEach(([label, w]) => {
     const row = document.createElement("div"); row.className = "win";
-    const a = document.createElement("span"); a.textContent = "🏆 " + label + ": " + w.names.join(" e ");
+    const a = document.createElement("span");
+    const avs = document.createElement("span"); avs.className = "avs";
+    w.uids.slice(0, 3).forEach((u, k) => avs.appendChild(avatarEl(u, w.names[k], 22)));
+    const tx = document.createElement("span"); tx.textContent = "🏆 " + label + ": " + w.names.join(" e ");
+    a.append(avs, tx);
     const b = document.createElement("span"); b.textContent = w.ml.toLocaleString("pt-BR") + " ml";
     row.append(a, b); list.appendChild(row);
   });
@@ -543,7 +618,7 @@ function render() {
     nm.append(a, c);
     const bar = document.createElement("div"); bar.className = "bar";
     const fill = document.createElement("i"); fill.style.width = Math.min(100, Math.round(r.ml / max * 100)) + "%";
-    bar.appendChild(fill); mid.append(nm, bar); w.append(pos, mid); b.appendChild(w);
+    bar.appendChild(fill); mid.append(nm, bar); w.append(pos, avatarEl(r.uid, r.name, 30), mid); b.appendChild(w);
   });
   const mineMl = logs.filter(l => l.user_id === me.id).reduce((s, l) => s + l.ml, 0);
   const pct = Math.min(100, Math.round(mineMl / myGoal * 100));
@@ -564,6 +639,7 @@ function render() {
     const cap = document.createElement("figcaption");
     cap.textContent = ((l.profiles && l.profiles.name) || "?") + " · " + l.ml + " ml · " +
       new Date(l.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    cap.prepend(avatarEl(l.user_id, (l.profiles && l.profiles.name) || "?", 18));
     const chips = document.createElement("div"); chips.className = "chips";
     const rs = reacts[l.id] || [];
     EMOJIS.forEach(e => {
@@ -632,12 +708,14 @@ async function deleteAccount() {
   if (!t || t.trim().toUpperCase() !== "EXCLUIR") return;
   note("Apagando…", true);
   try {
-    const bucket = sb.storage.from("proofs");
-    for (let i = 0; i < 50; i++) {
-      const { data: files, error: e1 } = await bucket.list(me.id, { limit: 100 });
-      if (e1 || !files || !files.length) break;
-      const { error: e2 } = await bucket.remove(files.map(f => me.id + "/" + f.name));
-      if (e2) break;
+    for (const name of ["proofs", "avatars"]) {
+      const bucket = sb.storage.from(name);
+      for (let i = 0; i < 50; i++) {
+        const { data: files, error: e1 } = await bucket.list(me.id, { limit: 100 });
+        if (e1 || !files || !files.length) break;
+        const { error: e2 } = await bucket.remove(files.map(f => me.id + "/" + f.name));
+        if (e2) break;
+      }
     }
     const { error } = await sb.rpc("delete_my_account");
     if (error) throw error;
@@ -654,6 +732,8 @@ function showProfile() {
   loadProfileStats();
   $("pEmail").textContent = me.email;
   $("pName").value = myName;
+  avMode = myAvatar.path ? "photo" : myAvatar.emoji ? "emoji" : "initial";
+  renderAvatarPicker();
   $("goal").value = myGoal;
   $("bottle").value = bottle;
   $("emailFreq").value = myEmailFreq;
@@ -832,12 +912,89 @@ $("testEmail").onclick = async () => {
   catch (e) { note(e.message || String(e)); }
 };
 
+// ---------- Seletor de avatar ----------
+let avMode = "initial";
+
+function renderAvatarPicker() {
+  const pv = $("avPreview"); pv.textContent = ""; pv.appendChild(avatarEl(me.id, myName, 64));
+  $("avName").textContent = myName;
+  document.querySelectorAll("#avTabs button").forEach(b => b.classList.toggle("on", b.dataset.m === avMode));
+  $("avEmojiBox").hidden = avMode !== "emoji";
+  $("avColorBox").hidden = avMode === "photo";
+  $("avPhotoBox").hidden = avMode !== "photo";
+  $("avPick").textContent = myAvatar.path ? "📷 Trocar foto" : "📷 Escolher foto";
+  const eg = $("avEmojis"); eg.textContent = "";
+  AV_EMOJIS.forEach(e => {
+    const b = document.createElement("button"); b.textContent = e; b.className = myAvatar.emoji === e && !myAvatar.path ? "on" : "";
+    b.setAttribute("aria-label", "Usar " + e);
+    b.onclick = () => saveAvatar({ avatar_emoji: e, avatar_path: null });
+    eg.appendChild(b);
+  });
+  const sw = $("avColors"); sw.textContent = "";
+  const cur = myAvatar.color || hashColor(me.id);
+  AV_COLORS.forEach(c => {
+    const b = document.createElement("button"); b.style.background = c; b.className = c === cur ? "on" : "";
+    b.setAttribute("aria-label", "Cor " + c);
+    b.onclick = () => saveAvatar({ avatar_color: c });
+    sw.appendChild(b);
+  });
+}
+
+async function saveAvatar(patch) {
+  const old = myAvatar.path;
+  const { error } = await sb.from("profiles").update(patch).eq("id", me.id);
+  if (error) {
+    note(/avatar_/.test(error.message) ? "Avatar indisponível: rode o migracao-avatar.sql no Supabase." : "Não consegui salvar o avatar: " + error.message);
+    return false;
+  }
+  if ("avatar_emoji" in patch) myAvatar.emoji = patch.avatar_emoji;
+  if ("avatar_color" in patch) myAvatar.color = patch.avatar_color;
+  if ("avatar_path" in patch) myAvatar.path = patch.avatar_path;
+  if (old && old !== myAvatar.path) sb.storage.from("avatars").remove([old]); // apaga a foto antiga
+  renderAvatarPicker(); note("Avatar salvo!", true);
+  return true;
+}
+
+document.querySelectorAll("#avTabs button").forEach(b => b.onclick = () => {
+  avMode = b.dataset.m;
+  if (avMode === "initial" && (myAvatar.emoji || myAvatar.path)) saveAvatar({ avatar_emoji: null, avatar_path: null });
+  else renderAvatarPicker();
+});
+$("avPick").onclick = () => $("avFile").click();
+
+// corta no centro em quadrado e reduz para 256 px
+function squareAvatar(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onload = () => {
+      const side = Math.min(im.width, im.height), sx = (im.width - side) / 2, sy = (im.height - side) / 2;
+      const c = document.createElement("canvas"); c.width = c.height = 256;
+      c.getContext("2d").drawImage(im, sx, sy, side, side, 0, 0, 256, 256); URL.revokeObjectURL(url);
+      c.toBlob(bl => bl ? res(bl) : rej(new Error("falha ao processar a foto")), "image/jpeg", 0.82);
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); rej(new Error("imagem inválida")); };
+    im.src = url;
+  });
+}
+
+$("avFile").onchange = async function () {
+  const f = this.files && this.files[0]; this.value = "";
+  if (!f) return;
+  try {
+    note("Enviando foto…", true);
+    const blob = await squareAvatar(f), path = me.id + "/" + Date.now() + ".jpg";
+    const up = await sb.storage.from("avatars").upload(path, blob, { contentType: "image/jpeg" });
+    if (up.error) throw new Error(/bucket/i.test(up.error.message) ? "rode o migracao-avatar.sql no Supabase" : up.error.message);
+    if (!(await saveAvatar({ avatar_path: path, avatar_emoji: null }))) sb.storage.from("avatars").remove([path]);
+  } catch (e) { note("Não consegui enviar a foto: " + (e.message || e)); }
+};
+
 $("saveName").onclick = async () => {
   const v = $("pName").value.trim();
   if (!v || v.length > 30) { note("O nome precisa ter de 1 a 30 caracteres."); $("pName").value = myName; return; }
   const { error } = await sb.from("profiles").update({ name: v }).eq("id", me.id);
   if (error) { note("Não consegui salvar o nome: " + error.message); return; }
-  myName = v; note("Nome salvo!", true);
+  myName = v; if (!$("profile").hidden) renderAvatarPicker(); note("Nome salvo!", true);
 };
 
 // ---------- Reações e moderação ----------
@@ -894,9 +1051,12 @@ async function removeMember(m) {
 async function loadMembers() {
   if (!me || !group) return;
   const gid = group.id;
-  const { data, error } = await sb.from("members").select("user_id,joined_at,profiles!user_id(name,goal_ml)").eq("group_id", gid);
+  let { data, error } = await sb.from("members").select("user_id,joined_at,profiles!user_id(name,goal_ml,avatar_emoji,avatar_color,avatar_path)").eq("group_id", gid);
+  if (error) ({ data, error } = await sb.from("members").select("user_id,joined_at,profiles!user_id(name,goal_ml)").eq("group_id", gid)); // banco sem a migração de avatar
   if (error || !group || group.id !== gid) return;
-  members = data || []; renderMembers();
+  members = data || [];
+  members.forEach(m => { const p = m.profiles || {}; avatars[m.user_id] = { emoji: p.avatar_emoji || null, color: p.avatar_color || null, path: p.avatar_path || null }; });
+  render();
 }
 
 function renderMembers() {
@@ -945,7 +1105,7 @@ function renderMembers() {
           li.append(tx, del); mid.appendChild(li);
         });
       }
-      row.appendChild(mid); box.appendChild(row);
+      row.append(avatarEl(m.user_id, nameOf(m), 32), mid); box.appendChild(row);
     });
 }
 
