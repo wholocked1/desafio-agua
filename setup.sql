@@ -29,7 +29,9 @@ create table if not exists public.profiles (
   goal_ml int not null default 2000 check (goal_ml between 500 and 10000),       -- meta diária pessoal
   email_freq text not null default 'none'
     check (email_freq in ('none', 'weekly', 'monthly', 'both')),                 -- resumo por e-mail
-  reminder_every int not null default 0 check (reminder_every in (0, 2, 3)),     -- lembretes: 0 = desligado
+  reminder_every int not null default 0 check (reminder_every in (0, 1, 2, 3)),  -- lembretes: 0 = desligado, 2/3 = a cada 2/3 h, 1 = horários escolhidos
+  reminder_hours int[] check (reminder_hours is null or (cardinality(reminder_hours) <= 16
+    and reminder_hours <@ array[7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22])),        -- horários escolhidos (7h às 22h)
   test_email_at timestamptz,                                                      -- último teste de e-mail
   avatar_emoji text check (avatar_emoji is null or char_length(avatar_emoji) between 1 and 8),
   avatar_color text check (avatar_color is null or avatar_color ~ '^#[0-9a-f]{6}$'),
@@ -69,6 +71,8 @@ create table if not exists public.logs (
   ml int not null check (ml between 1 and 5000),
   photo_path text,                                                                -- foto de prova (bucket proofs)
   created_at timestamptz not null default now(),
+  goal_ml int,                                                                    -- meta que valia no grupo naquele dia (preenchida pelo banco)
+  personal_goal_ml int,                                                           -- meta pessoal naquele dia (preenchida pelo banco)
   constraint logs_foto_propria check (photo_path is null or photo_path like user_id::text || '/%')
 );
 create index if not exists logs_group_day_idx on public.logs(group_id, day);
@@ -188,8 +192,9 @@ create trigger on_auth_user_created
 after insert on auth.users
 for each row execute function public.handle_new_user();
 
--- Registro válido: data entre ontem e amanhã e no máximo 6000 ml por pessoa por dia
+-- Registro válido: data entre ontem e amanhã e no máximo 6000 ml por pessoa, por dia, em cada grupo
 -- (beber água demais faz mal). Para mudar o limite, troque o 6000 e rode de novo.
+-- Também guarda no registro a meta que valia naquele momento (o app não consegue mandar outro valor).
 create or replace function public.check_log() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare total int;
@@ -198,10 +203,13 @@ begin
     raise exception 'dia_invalido';
   end if;
   select coalesce(sum(ml), 0) into total from public.logs
-   where user_id = new.user_id and day = new.day;
+   where user_id = new.user_id and group_id = new.group_id and day = new.day;
   if total + new.ml > 6000 then
     raise exception 'limite_diario';
   end if;
+  select p.goal_ml, coalesce(g.goal_ml, p.goal_ml) into new.personal_goal_ml, new.goal_ml
+    from public.profiles p, public.groups g
+   where p.id = new.user_id and g.id = new.group_id;
   return new;
 end $$;
 
@@ -340,21 +348,23 @@ begin
 end $$;
 
 -- ----- Placar, histórico -----
--- Soma por pessoa e dia de um grupo (as regras de acesso valem: só membros veem)
-create or replace function public.group_totals(gid uuid, since date)
-returns table (user_id uuid, day date, ml int)
+-- Soma por pessoa e dia de um grupo, com a meta daquele dia (as regras de acesso valem: só membros veem)
+drop function if exists public.group_totals(uuid, date);
+create function public.group_totals(gid uuid, since date)
+returns table (user_id uuid, day date, ml int, goal int)
 language sql stable security invoker set search_path = public as $$
-  select l.user_id, l.day, sum(l.ml)::int
+  select l.user_id, l.day, sum(l.ml)::int, max(l.goal_ml)::int
     from public.logs l
    where l.group_id = gid and l.day >= since
    group by l.user_id, l.day
 $$;
 
--- Meu total por dia, somando todos os meus grupos (histórico do Perfil)
-create or replace function public.my_daily_totals()
-returns table (day date, ml int, photos int)
+-- Meu total por dia, somando todos os meus grupos, com a minha meta daquele dia (histórico do Perfil)
+drop function if exists public.my_daily_totals();
+create function public.my_daily_totals()
+returns table (day date, ml int, photos int, goal int)
 language sql stable security invoker set search_path = public as $$
-  select l.day, sum(l.ml)::int, count(l.photo_path)::int
+  select l.day, sum(l.ml)::int, count(l.photo_path)::int, max(l.personal_goal_ml)::int
     from public.logs l
    where l.user_id = auth.uid()
    group by l.day

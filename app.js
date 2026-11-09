@@ -20,6 +20,50 @@ const TURNSTILE_SITE_KEY = String(CFG.TURNSTILE_SITE_KEY || "").trim();
 // ==============================================================
 
 const $ = id => document.getElementById(id);
+
+// ---------- Janela do app (no lugar das janelas simples do navegador) ----------
+// askDialog({ title, text, okText, danger, input: { type, value, placeholder, inputmode, validate } })
+// devolve: true (confirmou), o texto digitado (com input) ou null (cancelou)
+let dlgDone = null;
+function askDialog(o) {
+  if (dlgDone) dlgDone(null); // fecha uma janela que tenha ficado aberta
+  return new Promise(resolve => {
+    const box = $("dlg"), inp = $("dlgInput"), err = $("dlgErr"), yes = $("dlgYes");
+    $("dlgTitle").textContent = o.title || "";
+    $("dlgText").textContent = o.text || ""; $("dlgText").hidden = !o.text;
+    yes.textContent = o.okText || "Confirmar";
+    yes.classList.toggle("danger", !!o.danger);
+    err.hidden = true; err.textContent = "";
+    inp.hidden = !o.input;
+    if (o.input) {
+      inp.type = o.input.type || "text"; inp.value = o.input.value || "";
+      inp.placeholder = o.input.placeholder || ""; inp.inputMode = o.input.inputmode || "";
+    }
+    const finish = v => {
+      box.hidden = true; dlgDone = null;
+      document.removeEventListener("keydown", onKey);
+      resolve(v);
+    };
+    const submit = () => {
+      if (!o.input) return finish(true);
+      const v = inp.value;
+      const msg = o.input.validate ? o.input.validate(v) : null;
+      if (msg) { err.textContent = msg; err.hidden = false; inp.focus(); return; }
+      finish(v);
+    };
+    const onKey = e => {
+      if (e.key === "Escape") finish(null);
+      else if (e.key === "Enter" && (o.input ? document.activeElement === inp : true)) { e.preventDefault(); submit(); }
+    };
+    dlgDone = finish;
+    yes.onclick = submit;
+    $("dlgNo").onclick = () => finish(null);
+    box.onclick = e => { if (e.target === box) finish(null); }; // tocar fora fecha
+    document.addEventListener("keydown", onKey);
+    box.hidden = false;
+    setTimeout(() => (o.input ? inp : yes).focus(), 30);
+  });
+}
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 const lsDel = k => { try { localStorage.removeItem(k); } catch (e) {} };
@@ -49,7 +93,7 @@ if (!window.APP_CONFIG) {
 const pad = n => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
 
-let day = today(), me = null, myName = "", myGoal = GOAL, myEmailFreq = "none", myReminder = 0, winnerKey = "", logs = [], pending = 500, started = null, signup = false, channel = null;
+let day = today(), me = null, myName = "", myGoal = GOAL, myEmailFreq = "none", myReminder = 0, myHours = [], winnerKey = "", logs = [], pending = 500, started = null, signup = false, channel = null;
 let myGroups = [], group = null, members = [], reacts = {}, openLogs = {}, hist = [], period = "day", histKey = "";
 function cleanBottles(list) {
   if (!Array.isArray(list)) return null;
@@ -70,7 +114,7 @@ if (inviteParam) lsSet("agua-invite", inviteParam);
 
 let lastScreen = "groups";
 function screen(name) {
-  ["auth", "reset", "groups", "app", "profile", "install"].forEach(s => $(s).hidden = s !== name);
+  ["auth", "reset", "groups", "app", "history", "profile", "install"].forEach(s => $(s).hidden = s !== name);
   if (name !== "profile" && name !== "install") lastScreen = name;
   $("profileBtn").hidden = name === "auth" || name === "reset" || name === "profile" || name === "install";
   updateInstallBtn(name);
@@ -233,7 +277,11 @@ async function forgetThisDevice() {
     await sub.unsubscribe();
   } catch (e) { /* sem lembretes neste aparelho: segue */ }
 }
-const logout = async () => { $("logout").disabled = true; await forgetThisDevice(); await sb.auth.signOut(); $("logout").disabled = false; };
+// apaga os dados guardados para o modo sem internet (nomes, placar) ao sair da conta
+function clearCaches() {
+  try { Object.keys(localStorage).filter(k => k.startsWith("agua-cache-")).forEach(lsDel); } catch (e) {}
+}
+const logout = async () => { $("logout").disabled = true; await forgetThisDevice(); clearCaches(); await sb.auth.signOut(); $("logout").disabled = false; };
 $("logout").onclick = logout;
 
 // aviso de link vencido ou já usado, mostrado uma vez, na primeira vez que a tela de login abrir
@@ -287,10 +335,14 @@ if (sb) sb.auth.onAuthStateChange((ev, session) => {
 async function afterLogin() {
   let data = null;
   // tenta do mais completo ao mais simples (bancos sem alguma migração continuam funcionando)
-  for (const cols of ["name,goal_ml,email_freq,reminder_every,avatar_emoji,avatar_color,avatar_path,bottles", "name,goal_ml,email_freq,reminder_every,avatar_emoji,avatar_color,avatar_path", "name,goal_ml,email_freq,reminder_every", "name,goal_ml"]) {
+  for (const cols of ["name,goal_ml,email_freq,reminder_every,reminder_hours,avatar_emoji,avatar_color,avatar_path,bottles", "name,goal_ml,email_freq,reminder_every,avatar_emoji,avatar_color,avatar_path,bottles", "name,goal_ml,email_freq,reminder_every,avatar_emoji,avatar_color,avatar_path", "name,goal_ml,email_freq,reminder_every", "name,goal_ml"]) {
     const r = await sb.from("profiles").select(cols).eq("id", me.id).maybeSingle();
     if (!r.error) { data = r.data; break; }
+    if (isNetErr(r.error)) break; // sem internet: não adianta tentar as outras
   }
+  const pKey = "agua-cache-profile-" + me.id;
+  if (data) lsSet(pKey, JSON.stringify(data));
+  else { try { data = JSON.parse(lsGet(pKey) || "null"); } catch (e) { data = null; } }
   const bs = cleanBottles(data && data.bottles);
   if (bs) { bottles = bs; lsSet("agua-bottles", JSON.stringify(bottles)); }
   myAvatar = { emoji: (data && data.avatar_emoji) || null, color: (data && data.avatar_color) || null, path: (data && data.avatar_path) || null };
@@ -298,6 +350,7 @@ async function afterLogin() {
   myGoal = (data && data.goal_ml) || GOAL;
   myEmailFreq = (data && data.email_freq) || "none";
   myReminder = (data && data.reminder_every) || 0;
+  myHours = (data && Array.isArray(data.reminder_hours)) ? data.reminder_hours.slice().sort((a, b) => a - b) : [];
   await usePendingInvite();
   await loadGroups();
   const saved = lsGet("agua-group");
@@ -305,6 +358,7 @@ async function afterLogin() {
   if (g) openGroup(g); else showGroups();
   if (noteAfterLogin) { note(noteAfterLogin, true); noteAfterLogin = ""; }
   maybeShowInstallOnce();
+  flushQueue();
 }
 
 async function usePendingInvite() {
@@ -320,8 +374,14 @@ async function usePendingInvite() {
 async function loadGroups() {
   let { data, error } = await sb.from("members").select("groups(id,name,invite_code,owner_id,require_photo,goal_ml)").eq("user_id", me.id);
   if (error) ({ data, error } = await sb.from("members").select("groups(id,name,invite_code,owner_id)").eq("user_id", me.id)); // banco sem a migração de regras
-  if (error) { note("Erro ao carregar grupos: " + error.message); return; }
+  const gKey = "agua-cache-groups-" + me.id;
+  if (error) {
+    const cached = isNetErr(error) && readCache(gKey);
+    if (cached) { myGroups = cached; offlineNote(); return; }
+    note(isNetErr(error) ? OFFLINE_MSG : "Erro ao carregar grupos: " + error.message); return;
+  }
   myGroups = (data || []).map(r => r.groups).filter(Boolean);
+  lsSet(gKey, JSON.stringify(myGroups));
 }
 
 function showGroups() {
@@ -422,14 +482,14 @@ $("invShare").onclick = async () => {
   } catch (e) { note("Copie o link manualmente: " + url); }
 };
 $("invNew").onclick = async () => {
-  if (!confirm("Gerar um novo código? O link antigo deixa de funcionar.")) return;
+  if (!(await askDialog({ title: "Gerar um novo código?", text: "O link e o QR code de convite antigos deixam de funcionar. Quem já entrou continua no grupo.", okText: "Gerar novo código" }))) return;
   const { data, error } = await sb.rpc("regenerate_invite", { gid: group.id });
   if (error) { note("Não consegui gerar o código: " + error.message); return; }
   group.invite_code = data; $("invLink").textContent = inviteUrl(); renderInviteQR(); note("Novo link gerado: o QR code também mudou.", true);
 };
 
 function openGroup(g) {
-  group = g; lsSet("agua-group", g.id); logs = []; members = []; reacts = {}; openLogs = {}; hist = []; histKey = ""; $("membersCard").hidden = true; note("");
+  group = g; lsSet("agua-group", g.id); logs = []; members = []; reacts = {}; openLogs = {}; hist = []; histKey = ""; dayGoals = {}; $("membersCard").hidden = true; note("");
   screen("app"); $("invBox").hidden = true;
   $("gTitle").textContent = g.name; $("who").textContent = myName;
   $("goal").value = myGoal; $("winner").hidden = true; winnerKey = "";
@@ -440,6 +500,130 @@ function openGroup(g) {
     .subscribe();
   render(); load();
 }
+
+// ---------- Histórico do grupo (calendário, estilo GymRats) ----------
+let hMonth = "", hSel = "", hRows = {}, hDayLogs = null, hDayKey = "";
+
+function addMonths(first, n) { const [y, m] = first.split("-").map(Number); return iso(new Date(y, m - 1 + n, 1)); }
+const longDate = d => { const [y, m, dd] = d.split("-").map(Number); return new Date(y, m - 1, dd).toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }); };
+
+function showHistory() {
+  if (!group) return;
+  screen("history"); note("");
+  $("hGroup").textContent = "📅 " + group.name;
+  hMonth = periodStart("month"); hSel = day;
+  renderCalendar(); loadMonth();
+}
+
+async function loadMonth() {
+  const gid = group.id, m = hMonth, key = gid + "|" + m, next = addMonths(m, 1);
+  if (!hRows[key] || m === periodStart("month")) { // o mês atual sempre recarrega (ainda está mudando)
+    const { data, error } = await sb.rpc("group_totals", { gid, since: m });
+    if (error) { note("Histórico indisponível: rode o migracao-novidades.sql no Supabase."); return; }
+    hRows[key] = (data || []).filter(r => r.day < next);
+  }
+  if (!group || group.id !== gid || hMonth !== m) return;
+  renderCalendar(); loadDay();
+}
+
+function monthRows() { return (group && hRows[group.id + "|" + hMonth]) || []; }
+
+// a meta que valia para uma pessoa num dia (guardada no registro; hoje = a atual)
+function histGoal(r) {
+  const ppl = people(), cur = (ppl[r.user_id] || {}).goal || effGoal(GOAL);
+  return r.day === day ? cur : (r.goal > 0 ? r.goal : cur);
+}
+
+function renderCalendar() {
+  if (!group || !hMonth) return;
+  const [y, m] = hMonth.split("-").map(Number);
+  const ml = new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  $("hMonthLabel").textContent = ml.charAt(0).toUpperCase() + ml.slice(1); // "Novembro de 2026"
+  $("hPrev").disabled = hMonth <= addMonths(periodStart("month"), -12);
+  $("hNext").disabled = hMonth >= periodStart("month");
+  const rows = monthRows(), grid = $("hGrid"); grid.textContent = "";
+  const offset = (new Date(y, m - 1, 1).getDay() + 6) % 7; // semana começa na segunda
+  for (let i = 0; i < offset; i++) { const e = document.createElement("span"); e.className = "cal-blank"; grid.appendChild(e); }
+  let anyDays = 0, myHits = 0;
+  for (let d = hMonth; d < addMonths(hMonth, 1); d = addDays(d, 1)) {
+    const dayRows = rows.filter(r => r.day === d), mine = dayRows.find(r => r.user_id === me.id);
+    const hit = mine && mine.ml >= histGoal(mine);
+    if (dayRows.length) anyDays++;
+    if (hit) myHits++;
+    const b = document.createElement("button");
+    b.className = "cal-day" + (dayRows.length ? " has" : "") + (d === day ? " today" : "") + (d === hSel ? " sel" : "");
+    b.disabled = d > day;
+    const n = document.createElement("span"); n.textContent = String(Number(d.slice(8)));
+    const mk = document.createElement("small"); mk.textContent = hit ? "✅" : mine ? "💧" : "";
+    b.append(n, mk);
+    b.setAttribute("aria-label", longDate(d) + (hit ? ", você bateu a meta" : mine ? ", você registrou" : "") + (dayRows.length ? ", " + dayRows.length + (dayRows.length === 1 ? " pessoa registrou" : " pessoas registraram") : ""));
+    b.onclick = () => { hSel = d; renderCalendar(); loadDay(); };
+    grid.appendChild(b);
+  }
+  const [yy, mm] = hMonth.split("-").map(Number);
+  const mName = new Date(yy, mm - 1, 1).toLocaleDateString("pt-BR", { month: "long" });
+  $("hSummary").textContent = anyDays
+    ? "Em " + mName + ": o grupo registrou água em " + anyDays + (anyDays === 1 ? " dia" : " dias") + "; você bateu a meta em " + myHits + "."
+    : "Ninguém registrou água em " + mName + ".";
+}
+
+async function loadDay() {
+  if (!group || !hSel) return;
+  const gid = group.id, d = hSel, key = gid + "|" + d;
+  $("hDayTitle").textContent = longDate(d) + (d === day ? " (hoje)" : "");
+  if (hDayKey !== key) { hDayLogs = null; renderDay(); }
+  const { data, error } = await sb.from("logs").select("id,user_id,ml,photo_path,created_at,profiles!user_id(name)")
+    .eq("group_id", gid).eq("day", d).order("created_at", { ascending: false });
+  if (error || !group || group.id !== gid || hSel !== d) return;
+  hDayKey = key; hDayLogs = data || []; renderDay();
+  const need = hDayLogs.filter(l => l.photo_path).map(l => l.photo_path).filter(p => !signed[p] || signed[p].exp < Date.now());
+  if (need.length) { await signPhotos(need); renderDay(); }
+}
+
+function renderDay() {
+  const board = $("hDayBoard"), proofs = $("hDayProofs"), win = $("hDayWinner");
+  board.textContent = ""; proofs.textContent = ""; win.textContent = "";
+  if (!hDayLogs) { win.textContent = "Carregando…"; return; }
+  if (!hDayLogs.length) { win.textContent = "Ninguém registrou água neste dia."; return; }
+  const goalRow = {}; monthRows().filter(r => r.day === hSel).forEach(r => { goalRow[r.user_id] = histGoal(r); });
+  const ppl = people(), tot = {};
+  hDayLogs.forEach(l => {
+    const t = tot[l.user_id] || (tot[l.user_id] = { uid: l.user_id, name: (l.profiles && l.profiles.name) || (ppl[l.user_id] || {}).name || "?", ml: 0 });
+    t.ml += l.ml;
+  });
+  const rows = Object.values(tot).sort((a, b) => b.ml - a.ml);
+  const top = rows[0].ml, champs = rows.filter(r => r.ml === top).map(r => r.name).join(" e ");
+  win.textContent = (hSel === day ? "🏆 Liderando hoje: " : "🏆 Vencedor do dia: ") + champs + " (" + top.toLocaleString("pt-BR") + " ml)";
+  const medals = ["🥇", "🥈", "🥉"], max = Math.max(top, 1);
+  rows.forEach((r, i) => {
+    const goal = goalRow[r.uid] || (ppl[r.uid] || {}).goal || GOAL;
+    const w = document.createElement("div"); w.className = "row2";
+    const pos = document.createElement("div"); pos.className = "pos"; pos.textContent = medals[i] || String(i + 1);
+    const mid = document.createElement("div"); mid.style.flex = "1";
+    const nm = document.createElement("div"); nm.className = "nm";
+    const a = document.createElement("span"); a.textContent = r.name + (r.ml >= goal ? " ✅" : "");
+    const c = document.createElement("span"); c.className = "mut"; c.textContent = r.ml + " / " + goal + " ml";
+    nm.append(a, c);
+    const bar = document.createElement("div"); bar.className = "bar";
+    const fill = document.createElement("i"); fill.style.width = Math.round(r.ml / max * 100) + "%";
+    bar.appendChild(fill); mid.append(nm, bar); w.append(pos, avatarEl(r.uid, r.name, 30), mid); board.appendChild(w);
+  });
+  hDayLogs.filter(l => l.photo_path).forEach(l => {
+    const f = document.createElement("figure"); f.className = "pf";
+    const im = document.createElement("img"); im.alt = "Prova de " + ((l.profiles && l.profiles.name) || ""); im.loading = "lazy";
+    const sg = signed[l.photo_path]; if (sg && sg.url) im.src = sg.url;
+    const cap = document.createElement("figcaption");
+    cap.textContent = ((l.profiles && l.profiles.name) || "?") + " · " + l.ml + " ml · " +
+      new Date(l.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    cap.prepend(avatarEl(l.user_id, (l.profiles && l.profiles.name) || "?", 18));
+    f.append(im, cap); proofs.appendChild(f);
+  });
+}
+
+$("histBtn").onclick = showHistory;
+$("hBack").onclick = () => { if (group) openGroup(group); else showGroups(); };
+$("hPrev").onclick = () => { hMonth = addMonths(hMonth, -1); hSel = ""; renderCalendar(); $("hDayTitle").textContent = "Toque num dia para ver o ranking e as fotos"; hDayLogs = []; renderDay(); $("hDayWinner").textContent = ""; loadMonth(); };
+$("hNext").onclick = () => { hMonth = addMonths(hMonth, 1); hSel = hMonth === periodStart("month") ? day : ""; renderCalendar(); if (!hSel) { $("hDayTitle").textContent = "Toque num dia para ver o ranking e as fotos"; hDayLogs = []; renderDay(); $("hDayWinner").textContent = ""; } loadMonth(); };
 
 // ---------- Placar ----------
 // ---------- Garrafinhas ----------
@@ -455,18 +639,37 @@ function renderBottleButtons() {
   });
 }
 
+let bEditing = -1; // garrafinha sendo editada (-1 = nenhuma)
+
 function renderBottleEditor() {
   const box = $("bList"); box.textContent = "";
   bottles.forEach((b, i) => {
     const row = document.createElement("div"); row.className = "nm";
     const tx = document.createElement("span"); tx.textContent = b.name + " · " + b.ml + " ml";
+    const acts = document.createElement("span"); acts.className = "chips"; acts.style.marginTop = "0";
+    const ed = document.createElement("button"); ed.className = "chip"; ed.textContent = "✏️ Editar";
+    ed.onclick = () => startEditBottle(i);
     const del = document.createElement("button"); del.className = "chip danger"; del.textContent = "🗑️ Remover";
     del.disabled = bottles.length === 1; del.title = bottles.length === 1 ? "Você precisa ter pelo menos uma" : "Remover";
-    del.onclick = () => saveBottles(bottles.filter((_, k) => k !== i));
-    row.append(tx, del); box.appendChild(row);
+    del.onclick = () => { stopEditBottle(); saveBottles(bottles.filter((_, k) => k !== i)); };
+    acts.append(ed, del); row.append(tx, acts); box.appendChild(row);
   });
-  $("bAdd").disabled = bottles.length >= 6;
+  $("bAdd").disabled = bEditing < 0 && bottles.length >= 6;
 }
+
+function startEditBottle(i) {
+  bEditing = i;
+  $("bName").value = bottles[i].name; $("bMl").value = bottles[i].ml;
+  $("bAdd").textContent = "Salvar alteração"; $("bCancel").hidden = false;
+  renderBottleEditor(); $("bName").focus();
+}
+
+function stopEditBottle() {
+  bEditing = -1; $("bName").value = ""; $("bMl").value = "";
+  $("bAdd").textContent = "+ Adicionar garrafinha"; $("bCancel").hidden = true;
+}
+
+$("bCancel").onclick = () => { stopEditBottle(); renderBottleEditor(); };
 
 async function saveBottles(list) {
   const clean = cleanBottles(list);
@@ -485,6 +688,10 @@ $("bAdd").onclick = () => {
   const name = $("bName").value.trim(), ml = parseInt($("bMl").value, 10);
   if (!name) { note("Dê um nome para a garrafinha."); return; }
   if (!(ml >= 50 && ml <= 5000)) { note("O tamanho deve ficar entre 50 e 5000 ml."); return; }
+  if (bEditing >= 0) {
+    const list = bottles.slice(); list[bEditing] = { name, ml };
+    stopEditBottle(); saveBottles(list); return;
+  }
   if (bottles.length >= 6) { note("Você já tem 6 garrafinhas. Remova uma para adicionar outra."); return; }
   $("bName").value = ""; $("bMl").value = "";
   saveBottles(bottles.concat([{ name, ml }]));
@@ -540,13 +747,21 @@ async function load() {
   const { data, error } = await sb.from("logs")
     .select("id,user_id,ml,photo_path,created_at,profiles!user_id(name,goal_ml)")
     .eq("group_id", gid).eq("day", day).order("created_at", { ascending: false });
-  if (error) { note("Erro ao carregar: " + error.message); return; }
+  const lKey = "agua-cache-logs-" + gid;
+  if (error) {
+    if (!isNetErr(error)) { note("Erro ao carregar: " + error.message); return; }
+    const c = readCache(lKey); // sem internet: mostra o último placar salvo de hoje
+    if (c && c.day === day && group && group.id === gid) { logs = c.logs || []; render(); }
+    offlineNote(); renderQueue(); return;
+  }
   if (!group || group.id !== gid) return; // trocou de grupo no meio do caminho
+  lsSet(lKey, JSON.stringify({ day, logs: (data || []).map(l => Object.assign({}, l, { photo_path: null })) })); // sem fotos: os links vencem
   // limpa o aviso de erro de carregamento e os de "em andamento" ("Enviando…");
   // os demais (ex.: "Senha alterada!") continuam na tela
   const nt = $("note").textContent;
-  if (nt.startsWith("Erro ao carregar") || nt.endsWith("…")) note("");
+  if (nt.startsWith("Erro ao carregar") || nt.endsWith("…") || nt === OFFLINE_MSG) note("");
   logs = data || []; render(); loadMembers(); loadWinner(); loadHistory(); loadReactions();
+  renderQueue(); if (queueCount) flushQueue();
 }
 
 const signed = {};
@@ -622,6 +837,16 @@ function people() {
 }
 
 // total por pessoa e dia: histórico do banco, com o dia de hoje sempre atualizado pelos registros ao vivo
+// meta de cada pessoa em cada dia passado, como estava guardada no registro (dayGoals[uid][dia])
+let dayGoals = {};
+
+// a meta que vale para uma pessoa num dia: hoje usa a meta atual; dias passados, a guardada naquele dia
+function goalFor(uid, d, current) {
+  if (d === day) return current;
+  const g = dayGoals[uid] && dayGoals[uid][d];
+  return g > 0 ? g : current; // registros de antes da atualização não têm meta guardada
+}
+
 function dailyTotals() {
   const t = {};
   hist.forEach(h => { if (h.day !== day) (t[h.user_id] || (t[h.user_id] = {}))[h.day] = h.ml; });
@@ -631,9 +856,9 @@ function dailyTotals() {
 
 // dias seguidos batendo a meta; se hoje ainda não bateu, conta a partir de ontem (não zera no meio do dia)
 function streakOf(uid, totals, goal) {
-  const u = totals[uid] || {};
-  let d = (u[day] || 0) >= goal ? day : addDays(day, -1), n = 0;
-  while ((u[d] || 0) >= goal && n < 62) { n++; d = addDays(d, -1); }
+  const u = totals[uid] || {}, hit = d => (u[d] || 0) >= goalFor(uid, d, goal);
+  let d = hit(day) ? day : addDays(day, -1), n = 0;
+  while (hit(d) && n < 62) { n++; d = addDays(d, -1); }
   return n;
 }
 
@@ -644,7 +869,9 @@ async function loadHistory() {
   const { data, error } = await sb.rpc("group_totals", { gid, since });
   if (error) { if (histKey !== key) note("Ranking da semana/mês indisponível: rode o migracao-ranking.sql no Supabase."); return; }
   if (!group || group.id !== gid) return;
-  histKey = key; hist = data || []; render();
+  histKey = key; hist = data || [];
+  dayGoals = {}; hist.forEach(h => { if (h.goal) (dayGoals[h.user_id] || (dayGoals[h.user_id] = {}))[h.day] = h.goal; });
+  render();
 }
 
 document.querySelectorAll("#tabs button").forEach(btn => btn.onclick = () => {
@@ -702,7 +929,7 @@ function render() {
   const rows = Object.keys(ppl).map(uid => {
     const u = totals[uid] || {}, p = ppl[uid];
     let ml = 0, hit = 0;
-    Object.keys(u).forEach(d => { if (d >= start && d <= day) { ml += u[d]; if (u[d] >= p.goal) hit++; } });
+    Object.keys(u).forEach(d => { if (d >= start && d <= day) { ml += u[d]; if (u[d] >= goalFor(uid, d, p.goal)) hit++; } });
     return { uid, name: p.name, goal: p.goal, ml, hit, streak: streakOf(uid, totals, p.goal) };
   }).filter(r => r.ml > 0).sort((a, b) => b.ml - a.ml || b.streak - a.streak);
   const b = $("board"); b.textContent = "";
@@ -800,8 +1027,8 @@ $("saveGoal").onclick = async () => {
 $("leave").onclick = async () => {
   if (!group) return;
   const owner = group.owner_id === me.id, gid = group.id;
-  const msg = 'Sair do grupo "' + group.name + '"?\n\nSeus registros e fotos neste grupo serão apagados.' + (owner ? "\n\nVocê é o dono: a posse passa para o membro mais antigo (se não houver outros, o grupo é excluído)." : "");
-  if (!confirm(msg)) return;
+  const msg = "Seus registros e fotos neste grupo serão apagados." + (owner ? "\n\nVocê é o dono: a posse passa para o membro mais antigo (se não houver outros, o grupo é excluído)." : "");
+  if (!(await askDialog({ title: 'Sair do grupo "' + group.name + '"?', text: msg, okText: "Sair do grupo", danger: true }))) return;
   const { data, error } = await sb.rpc("leave_group", { gid });
   if (error) { note("Não consegui sair do grupo."); return; }
   if (data && data.length) sb.storage.from("proofs").remove(data);
@@ -811,8 +1038,13 @@ $("leave").onclick = async () => {
 };
 
 async function deleteAccount() {
-  const t = prompt("Isso apaga sua conta, seus registros e suas fotos para sempre.\n\nDigite EXCLUIR para confirmar.");
-  if (!t || t.trim().toUpperCase() !== "EXCLUIR") return;
+  const t = await askDialog({
+    title: "Excluir sua conta?",
+    text: "Isso apaga sua conta, seus registros e suas fotos para sempre. Não dá para desfazer.\n\nPara confirmar, digite EXCLUIR.",
+    okText: "Excluir conta", danger: true,
+    input: { placeholder: "EXCLUIR", validate: v => v.trim().toUpperCase() === "EXCLUIR" ? null : "Digite EXCLUIR para confirmar." }
+  });
+  if (!t) return;
   note("Apagando…", true);
   try {
     for (const name of ["proofs", "avatars"]) {
@@ -827,6 +1059,7 @@ async function deleteAccount() {
     const { error } = await sb.rpc("delete_my_account");
     if (error) throw error;
     ["agua-group", "agua-invite", "agua-bottle", "agua-bottles"].forEach(lsDel);
+    clearCaches();
     try { await sb.auth.signOut({ scope: "local" }); } catch (e) {}
     note("Conta excluída.", true);
   } catch (e) { note("Não consegui excluir a conta: " + (e.message || e)); }
@@ -842,9 +1075,10 @@ function showProfile() {
   avMode = myAvatar.path ? "photo" : myAvatar.emoji ? "emoji" : "initial";
   renderAvatarPicker();
   $("goal").value = myGoal;
-  renderBottleEditor();
+  stopEditBottle(); renderBottleEditor();
   $("emailFreq").value = myEmailFreq;
   $("reminder").value = String(myReminder);
+  pickHours = myHours.length ? myHours.slice() : [9, 12, 15, 18]; renderHours();
   $("pushHint").textContent = pushHintText();
   const box = $("pGroups"); box.textContent = "";
   if (!myGroups.length) {
@@ -869,21 +1103,24 @@ async function loadProfileStats() {
 function renderProfileStats(rows) {
   const t = {}; rows.forEach(r => { t[r.day] = r; });
   const goal = myGoal, ml = d => (t[d] ? t[d].ml : 0);
+  // hoje vale a meta atual; nos dias passados, a meta pessoal guardada naquele dia
+  const gOf = d => (d !== day && t[d] && t[d].goal > 0) ? t[d].goal : goal;
+  const hitOn = d => ml(d) > 0 && ml(d) >= gOf(d);
   const fmtL = v => (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " L";
   const dayLabel = d => { const [y, m, dd] = d.split("-"); return dd + "/" + m; };
 
   // números gerais
   let sum30 = 0, hit30 = 0;
-  for (let i = 0; i < 30; i++) { const d = addDays(day, -i); sum30 += ml(d); if (ml(d) >= goal) hit30++; }
+  for (let i = 0; i < 30; i++) { const d = addDays(day, -i); sum30 += ml(d); if (hitOn(d)) hit30++; }
   const days = Object.keys(t).sort();
   const totalMl = rows.reduce((s, r) => s + r.ml, 0), totalPhotos = rows.reduce((s, r) => s + r.photos, 0);
-  const hitDays = days.filter(d => t[d].ml >= goal).length;
+  const hitDays = days.filter(hitOn).length;
   let best = 0, run = 0, prev = null;
   days.forEach(d => {
-    if (t[d].ml >= goal) { run = (prev && addDays(prev, 1) === d) ? run + 1 : 1; prev = d; best = Math.max(best, run); }
+    if (hitOn(d)) { run = (prev && addDays(prev, 1) === d) ? run + 1 : 1; prev = d; best = Math.max(best, run); }
   });
-  let cur = 0, d0 = ml(day) >= goal ? day : addDays(day, -1);
-  while (ml(d0) >= goal && cur < 3650) { cur++; d0 = addDays(d0, -1); }
+  let cur = 0, d0 = hitOn(day) ? day : addDays(day, -1);
+  while (hitOn(d0) && cur < 3650) { cur++; d0 = addDays(d0, -1); }
 
   const tiles = [
     [Math.round(sum30 / 30).toLocaleString("pt-BR") + " ml", "média por dia (30 dias)"],
@@ -905,13 +1142,14 @@ function renderProfileStats(rows) {
   const gl = document.createElement("div"); gl.className = "goal"; gl.style.bottom = (goal / top * 100) + "%"; chart.appendChild(gl);
   last.forEach((d, i) => {
     const v = ml(d), col = document.createElement("button");
-    col.className = "col" + (v >= goal ? "" : " low");
-    col.setAttribute("aria-label", dayLabel(d) + ": " + v + " ml" + (v >= goal ? ", meta batida" : ""));
+    const met = hitOn(d);
+    col.className = "col" + (met ? "" : " low");
+    col.setAttribute("aria-label", dayLabel(d) + ": " + v + " ml" + (met ? ", meta batida" : ""));
     const bar = document.createElement("i"); bar.style.height = (v ? Math.max(2, v / top * 100) : 0) + "%";
     col.appendChild(bar);
     const show = () => {
       chart.querySelectorAll(".col").forEach(c => c.classList.remove("sel")); col.classList.add("sel");
-      $("hInfo").textContent = dayLabel(d) + (d === day ? " (hoje)" : "") + ": " + v.toLocaleString("pt-BR") + " ml" + (v >= goal ? " · meta batida ✅" : " · meta de " + goal + " ml");
+      $("hInfo").textContent = dayLabel(d) + (d === day ? " (hoje)" : "") + ": " + v.toLocaleString("pt-BR") + " ml" + (met ? " · meta de " + gOf(d) + " ml batida ✅" : " · meta de " + gOf(d) + " ml");
     };
     col.onclick = show; col.onmouseenter = show;
     chart.appendChild(col);
@@ -943,6 +1181,7 @@ function renderProfileStats(rows) {
 $("pBack").onclick = goBack;
 function goBack() {
   if (lastScreen === "app" && group) openGroup(group);
+  else if (lastScreen === "history" && group) { screen("history"); renderCalendar(); renderDay(); }
   else if (lastScreen === "auth" || !me) screen("auth");
   else showGroups();
 }
@@ -1098,14 +1337,34 @@ $("saveEmailFreq").onclick = async () => {
   myEmailFreq = v; note(v === "none" ? "Você não vai receber e-mails de resumo." : "Preferência de e-mail salva!", true);
 };
 
+// horários escolhidos (7h às 22h), marcados na grade
+const HOURS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+let pickHours = [];
+function renderHours() {
+  $("hoursBox").hidden = $("reminder").value !== "1";
+  const g = $("hoursGrid"); g.textContent = "";
+  HOURS.forEach(h => {
+    const b = document.createElement("button"); b.textContent = h + "h";
+    b.className = pickHours.includes(h) ? "on" : "";
+    b.setAttribute("aria-pressed", pickHours.includes(h) ? "true" : "false");
+    b.onclick = () => { pickHours = pickHours.includes(h) ? pickHours.filter(x => x !== h) : pickHours.concat([h]).sort((a, z) => a - z); renderHours(); };
+    g.appendChild(b);
+  });
+}
+$("reminder").onchange = renderHours;
+
 $("saveReminder").onclick = async () => {
   const v = parseInt($("reminder").value, 10);
+  if (v === 1 && !pickHours.length) { note("Escolha pelo menos um horário."); return; }
   try {
     if (v > 0) { note("Ativando…", true); await enablePush(); }
-    const { error } = await sb.from("profiles").update({ reminder_every: v }).eq("id", me.id);
-    if (error) throw new Error("Não consegui salvar: " + error.message);
-    myReminder = v; note(v ? "Lembretes ativados a cada " + v + " horas!" : "Lembretes desligados.", true);
-  } catch (e) { $("reminder").value = String(myReminder); note(e.message || String(e)); }
+    const patch = { reminder_every: v };
+    if (v === 1) patch.reminder_hours = pickHours;
+    const { error } = await sb.from("profiles").update(patch).eq("id", me.id);
+    if (error) throw new Error(/reminder/.test(error.message) && v === 1 ? "Horários escolhidos indisponíveis: rode o migracao-novidades.sql no Supabase." : "Não consegui salvar: " + error.message);
+    myReminder = v; if (v === 1) myHours = pickHours.slice();
+    note(v === 1 ? "Lembretes ativados às " + pickHours.map(h => h + "h").join(", ") + "!" : v ? "Lembretes ativados a cada " + v + " horas!" : "Lembretes desligados.", true);
+  } catch (e) { $("reminder").value = String(myReminder); renderHours(); note(e.message || String(e)); }
   $("pushHint").textContent = pushHintText();
 };
 
@@ -1237,7 +1496,7 @@ async function toggleReact(logId, emoji, mine) {
 
 async function removeLog(l) {
   const who = l.user_id === me.id ? "seu registro" : "o registro de " + (((l.profiles && l.profiles.name)) || "outra pessoa");
-  if (!confirm("Remover " + who + " de " + l.ml + " ml" + (l.photo_path ? " (e a foto)" : "") + "?")) return;
+  if (!(await askDialog({ title: "Remover registro?", text: "Remover " + who + " de " + l.ml + " ml" + (l.photo_path ? ", junto com a foto" : "") + "?", okText: "Remover", danger: true }))) return;
   if (l.photo_path) await sb.storage.from("proofs").remove([l.photo_path]); // a foto sai antes do registro
   const { error } = await sb.from("logs").delete().eq("id", l.id);
   if (error) { note("Não consegui remover: " + error.message); return; }
@@ -1246,7 +1505,7 @@ async function removeLog(l) {
 
 async function removeMember(m) {
   const name = (m.profiles && m.profiles.name) || "esta pessoa";
-  if (!confirm("Remover " + name + " do grupo?\n\nTodos os registros, fotos e reações dela neste grupo serão apagados. Para ela não voltar com o mesmo link, gere um novo código de convite depois.")) return;
+  if (!(await askDialog({ title: "Remover " + name + " do grupo?", text: "Todos os registros, fotos e reações dessa pessoa neste grupo serão apagados.\n\nPara ela não voltar com o mesmo link, gere um novo código de convite depois.", okText: "Remover do grupo", danger: true }))) return;
   const gid = group.id;
   note("Removendo…", true);
   const { data: ph } = await sb.from("logs").select("photo_path").eq("group_id", gid).eq("user_id", m.user_id).not("photo_path", "is", null);
@@ -1342,25 +1601,118 @@ function shrink(file) {
   });
 }
 
+function logErrMsg(m) {
+  return /limite_diario/.test(m) ? "Limite diário de 6000 ml neste grupo atingido. Por segurança, o app não registra mais que isso por dia."
+    : /dia_invalido/.test(m) ? "Data inválida. Confira a data e a hora do seu aparelho."
+    : /foto_obrigatoria/.test(m) ? "Neste grupo, todo registro precisa de foto. Use um dos botões 📸."
+    : "Não consegui salvar: " + m;
+}
+
 async function addLog(ml, blob) {
   if (!me || !group || !(ml > 0)) return;
-  let path = null;
-  if (blob) {
-    path = me.id + "/" + Date.now() + ".jpg";
-    const up = await sb.storage.from("proofs").upload(path, blob, { contentType: "image/jpeg" });
-    if (up.error) { note("Não consegui enviar a foto: " + up.error.message); return; }
-  }
-  const { error } = await sb.from("logs").insert({ group_id: group.id, ml, day, photo_path: path });
-  if (error) {
-    if (path) sb.storage.from("proofs").remove([path]);
-    note(/limite_diario/.test(error.message) ? "Limite diário de 6000 ml atingido. Por segurança, o app não registra mais que isso por dia."
-      : /dia_invalido/.test(error.message) ? "Data inválida. Confira a data e a hora do seu aparelho."
-      : /foto_obrigatoria/.test(error.message) ? "Neste grupo, todo registro precisa de foto. Use um dos botões 📸."
-      : "Não consegui salvar: " + error.message);
-    return;
-  }
+  const item = { user_id: me.id, group_id: group.id, ml, day, blob: blob || null, photo_path: null, created: Date.now() };
+  if (!navigator.onLine) return enqueue(item);
+  const r = await sendLog(item);
+  if (r === "net") return enqueue(item);
+  if (r) { note(r); return; }
   await load();
 }
+
+// envia um registro (foto primeiro). Devolve "" (deu certo), "net" (sem internet) ou a mensagem de erro.
+async function sendLog(it) {
+  if (it.blob && !it.photo_path) {
+    const path = it.user_id + "/" + it.created + ".jpg";
+    const up = await sb.storage.from("proofs").upload(path, it.blob, { contentType: "image/jpeg" });
+    // "já existe" = a foto subiu numa tentativa anterior, mas a resposta se perdeu no caminho
+    if (up.error && !/already exists|duplicate/i.test(up.error.message || "")) return isNetErr(up.error) ? "net" : "Não consegui enviar a foto: " + up.error.message;
+    it.photo_path = path;
+  }
+  const { error } = await sb.from("logs").insert({ group_id: it.group_id, ml: it.ml, day: it.day, photo_path: it.photo_path });
+  if (!error) return "";
+  if (isNetErr(error)) return "net";
+  if (it.photo_path) sb.storage.from("proofs").remove([it.photo_path]);
+  return logErrMsg(error.message);
+}
+
+// ---------- Modo sem internet ----------
+// Sem conexão, o app mostra os últimos dados salvos neste aparelho e guarda os registros
+// (com a foto) numa fila. Quando a internet volta, a fila é enviada sozinha, na ordem.
+const OFFLINE_MSG = "Sem internet: mostrando os últimos dados salvos neste aparelho.";
+const QUEUE_MAX = 20;
+let queueCount = 0, queueMl = 0, flushing = false;
+function isNetErr(e) {
+  if (!navigator.onLine) return true;
+  const m = String((e && (e.message || e.name)) || e || "");
+  return /failed to fetch|networkerror|network error|load failed|network request failed|fetch failed/i.test(m);
+}
+function readCache(k) { try { return JSON.parse(lsGet(k) || "null"); } catch (e) { return null; } }
+function offlineNote() { const t = $("note").textContent; if (!t || t.startsWith("Erro ao carregar")) note(OFFLINE_MSG); }
+
+function idb(mode, fn) {
+  return new Promise((resolve, reject) => {
+    if (!("indexedDB" in window)) return reject(new Error("sem IndexedDB"));
+    const op = indexedDB.open("desafio-agua", 1);
+    op.onupgradeneeded = () => op.result.createObjectStore("fila", { keyPath: "id", autoIncrement: true });
+    op.onerror = () => reject(op.error);
+    op.onsuccess = () => {
+      const db = op.result, tx = db.transaction("fila", mode), st = tx.objectStore("fila");
+      let out; const r = fn(st); if (r) r.onsuccess = () => { out = r.result; };
+      tx.oncomplete = () => { db.close(); resolve(out); };
+      tx.onerror = tx.onabort = () => { db.close(); reject(tx.error); };
+    };
+  });
+}
+const queueAll = () => idb("readonly", st => st.getAll()).then(l => (l || []).filter(x => me && x.user_id === me.id)).catch(() => []);
+
+async function enqueue(it) {
+  const list = await queueAll();
+  if (list.length >= QUEUE_MAX) { note("Sem internet e a fila já tem " + QUEUE_MAX + " registros. Espere a conexão voltar."); return; }
+  const rec = Object.assign({}, it);
+  if (rec.blob) { rec.photo = await rec.blob.arrayBuffer(); } // guardado como bytes (funciona em todos os celulares)
+  delete rec.blob;
+  try { await idb("readwrite", st => st.add(rec)); }
+  catch (e) { note("Sem internet e não consegui guardar o registro neste aparelho. Tente de novo quando a conexão voltar."); return; }
+  note("Sem internet: registro guardado. Ele será enviado sozinho quando a conexão voltar.", true);
+  renderQueue();
+}
+
+async function renderQueue() {
+  const list = me ? await queueAll() : [];
+  queueCount = list.length; queueMl = 0;
+  const here = list.filter(x => group && x.group_id === group.id);
+  here.forEach(x => { queueMl += x.ml; });
+  const el = $("queueLine");
+  el.hidden = !here.length;
+  el.textContent = here.length ? "⏳ " + (here.length === 1 ? "1 registro esperando" : here.length + " registros esperando") + " internet (" + queueMl + " ml)" : "";
+}
+
+async function flushQueue() {
+  if (flushing || !me || !sb || !navigator.onLine) return;
+  flushing = true;
+  let sent = 0;
+  const problems = [];
+  try {
+    const list = (await queueAll()).sort((a, b) => a.created - b.created);
+    for (const it of list) {
+      const item = Object.assign({}, it, { blob: it.photo ? new Blob([it.photo], { type: "image/jpeg" }) : null });
+      const r = await sendLog(item);
+      if (r === "net") { // caiu de novo: guarda o que já subiu (a foto) e tenta depois
+        if (item.photo_path && !it.photo_path) await idb("readwrite", st => st.put(Object.assign({}, it, { photo_path: item.photo_path }))).catch(() => {});
+        break;
+      }
+      await idb("readwrite", st => st.delete(it.id)).catch(() => {});
+      if (r) problems.push(r); else sent++;
+    }
+  } finally { flushing = false; }
+  await renderQueue();
+  if (problems.length) note("Um registro feito sem internet não entrou: " + problems[0]);
+  else if (sent) note(sent === 1 ? "Registro feito sem internet enviado! ✅" : sent + " registros feitos sem internet enviados! ✅", true);
+  if (sent && group) load();
+}
+
+window.addEventListener("online", () => { flushQueue(); if (group) load(); });
+window.addEventListener("offline", () => { if (me) note(OFFLINE_MSG); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") flushQueue(); });
 
 function ask(ml) {
   if (photoRequired()) { pending = ml; $("shot").click(); } else addLog(ml, null);
@@ -1373,7 +1725,14 @@ $("shot").onchange = async function () {
   catch (e) { note("Não consegui ler a foto. Tente de novo."); }
 };
 document.querySelectorAll("[data-ml]").forEach(btn => btn.onclick = () => ask(parseInt(btn.dataset.ml, 10)));
-$("custom").onclick = () => { const v = parseInt(prompt("Quantos ml?", "250"), 10); if (v > 0 && v <= 5000) ask(v); };
+$("custom").onclick = async () => {
+  const v = await askDialog({
+    title: "Outro valor", text: "Quantos ml você bebeu?", okText: "Registrar",
+    input: { type: "number", value: "250", inputmode: "numeric", placeholder: "ml",
+             validate: v => { const n = parseInt(v, 10); return n >= 1 && n <= 5000 ? null : "Digite um valor entre 1 e 5000 ml."; } }
+  });
+  if (v) ask(parseInt(v, 10));
+};
 $("undo").onclick = async () => {
   const last = logs.find(l => l.user_id === me.id); // lista vem do mais novo para o mais antigo
   if (!last) return;

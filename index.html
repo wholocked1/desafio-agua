@@ -83,6 +83,29 @@
     </div>
   </section>
 
+  <!-- HISTÓRICO DO GRUPO -->
+  <section id="history" hidden>
+    <div class="row" style="margin-top:0;margin-bottom:12px"><button class="alt" id="hBack" style="flex:0 0 auto;padding:8px 14px">← Voltar</button></div>
+    <div class="card">
+      <strong id="hGroup"></strong>
+      <div class="cal-head">
+        <button class="alt" id="hPrev" aria-label="Mês anterior">‹</button>
+        <strong id="hMonthLabel"></strong>
+        <button class="alt" id="hNext" aria-label="Próximo mês">›</button>
+      </div>
+      <div class="cal-week"><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span><span>D</span></div>
+      <div class="cal-grid" id="hGrid"></div>
+      <p class="mut" id="hSummary" style="margin:10px 0 0"></p>
+      <p class="mut" style="margin:6px 0 0">✅ você bateu a meta · 💧 você registrou · dia azul: alguém do grupo registrou</p>
+    </div>
+    <div class="card">
+      <strong id="hDayTitle"></strong>
+      <div id="hDayWinner" class="mut" style="margin-top:6px"></div>
+      <div id="hDayBoard"></div>
+      <div id="hDayProofs" class="proofs-grid"></div>
+    </div>
+  </section>
+
   <!-- PERFIL -->
   <section id="profile" hidden>
     <div class="row" style="margin-top:0;margin-bottom:12px"><button class="alt" id="pBack" style="flex:0 0 auto;padding:8px 14px">← Voltar</button></div>
@@ -108,7 +131,7 @@
       <div class="mut" style="margin-top:12px">Suas garrafinhas (até 6)</div>
       <div class="blist" id="bList"></div>
       <div class="row"><input id="bName" maxlength="20" placeholder="Nome (ex.: Copo do trabalho)" style="margin-top:0"><input id="bMl" type="number" min="50" max="5000" step="50" inputmode="numeric" placeholder="ml" style="margin-top:0;flex:0 0 90px"></div>
-      <div class="row"><button class="alt" id="bAdd">+ Adicionar garrafinha</button></div>
+      <div class="row"><button class="alt" id="bCancel" hidden>Cancelar</button><button class="alt" id="bAdd">+ Adicionar garrafinha</button></div>
       <p class="mut" style="margin:8px 0 0">A meta aparece para o grupo. As garrafinhas ficam na sua conta e valem em todos os seus aparelhos.</p>
     </div>
     <div class="card">
@@ -120,12 +143,17 @@
         <option value="monthly">Mensal (dia 1º, 9h)</option>
         <option value="both">Semanal e mensal</option>
       </select><button class="alt" id="saveEmailFreq" style="flex:0 0 100px">Salvar</button></div>
-      <label for="reminder" class="mut" style="display:block;margin-top:12px">Lembretes para beber água (das 9h às 21h, só se ainda não bateu a meta)</label>
+      <label for="reminder" class="mut" style="display:block;margin-top:12px">Lembretes para beber água (só chegam se você ainda não bateu a meta do dia)</label>
       <div class="row"><select id="reminder" style="margin-top:0">
         <option value="0">Desligados</option>
-        <option value="2">A cada 2 horas</option>
-        <option value="3">A cada 3 horas</option>
+        <option value="2">A cada 2 horas (9h às 21h)</option>
+        <option value="3">A cada 3 horas (9h às 21h)</option>
+        <option value="1">Nos horários que eu escolher</option>
       </select><button class="alt" id="saveReminder" style="flex:0 0 100px">Salvar</button></div>
+      <div id="hoursBox" hidden>
+        <div class="mut" style="margin-top:10px">Toque nos horários em que quer ser lembrado:</div>
+        <div class="hours" id="hoursGrid"></div>
+      </div>
       <p class="mut" id="pushHint" style="margin:8px 0 0"></p>
       <div class="row"><button class="alt" id="testPush">Testar notificação</button><button class="alt" id="testEmail">Me mandar um resumo</button></div>
     </div>
@@ -158,6 +186,7 @@
       <div class="nm"><strong id="gTitle"></strong><span class="mut" id="who"></span></div>
       <div class="row"><button class="alt" id="invite">Convidar amigos</button><button class="alt" id="switchGroup">Trocar de grupo</button></div>
       <div class="row"><button class="alt" id="membersBtn">Ver membros</button><button class="alt" id="leave">Sair do grupo</button></div>
+      <div class="row"><button class="alt" id="histBtn">📅 Histórico do grupo</button></div>
       <div class="row" id="rulesRow" hidden><button class="alt" id="rulesBtn">⚙️ Regras do grupo</button></div>
       <div class="mut" id="rulesLine" style="margin-top:10px" hidden></div>
       <div id="invBox" hidden>
@@ -190,6 +219,7 @@
       <div class="big" id="mine">0 ml</div>
       <div class="mut" id="goalLine" style="text-align:center"></div>
       <div class="bar" style="margin-top:6px"><i id="goalBar" style="width:0"></i></div>
+      <div class="queue" id="queueLine" hidden></div>
       <div class="btgrid" id="btBox"></div>
       <p class="mut" id="photoHint" style="margin:6px 0 0">Tire uma foto com a garrafinha de cabeça para baixo para valer.</p>
       <input type="file" id="shot" accept="image/*" capture="environment" hidden>
@@ -211,6 +241,17 @@
   </section>
 
   <p id="note"></p>
+
+  <!-- JANELA DO APP (confirmações e "Outro valor") -->
+  <div id="dlg" class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" hidden>
+    <div class="dlg-box">
+      <strong id="dlgTitle" class="dlg-title"></strong>
+      <p id="dlgText" class="dlg-text"></p>
+      <input id="dlgInput" autocomplete="off" hidden>
+      <p id="dlgErr" class="dlg-err" hidden></p>
+      <div class="row"><button class="alt" id="dlgNo">Cancelar</button><button id="dlgYes">Confirmar</button></div>
+    </div>
+  </div>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js" crossorigin="anonymous"></script>

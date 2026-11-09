@@ -34,7 +34,7 @@ Nas próximas atualizações do app, troque só o `index.html` (e os outros arqu
 | `app.css` | o visual (cores, tamanhos, espaçamentos) | ao mudar a aparência |
 | `app.js` | a lógica do app | ao mudar o funcionamento |
 | `config.js` | URL e chaves públicas, meta padrão | uma vez, na configuração |
-| `sw.js` | o que deixa o app instalável e os lembretes | raramente |
+| `sw.js` | o que deixa o app instalável, abrir sem internet e os lembretes | raramente |
 | `vercel.json` | regras de segurança da hospedagem | raramente |
 
 O `index.html` não tem mais JavaScript dentro. Por isso a política de segurança do `vercel.json` bloqueia qualquer script embutido na página, o que protege contra injeção de código.
@@ -71,7 +71,7 @@ O site precisa estar em **https** (todas as hospedagens acima já entregam isso)
 O app abre em tela cheia com o ícone da gota, pede permissão da câmera na primeira foto e se atualiza sozinho quando você publicar uma versão nova.
 
 ## Atualizar o app
-Troque os arquivos na hospedagem (ou envie para o GitHub, se ela estiver ligada ao repositório). Quem já instalou recebe a versão nova na próxima vez que abrir o app com internet. Se mudar algum arquivo guardado no celular (como os ícones), aumente o número em `CACHE = "agua-v2"` no `sw.js` para `agua-v3` (e assim por diante).
+Troque os arquivos na hospedagem (ou envie para o GitHub, se ela estiver ligada ao repositório). Quem já instalou recebe a versão nova na próxima vez que abrir o app com internet. Se mudar algum arquivo guardado no celular (como os ícones), aumente o número em `CACHE = "agua-v8"` no `sw.js` para `agua-v9` (e assim por diante).
 
 ## Grupos e links de convite
 Qualquer pessoa pode criar uma conta. Depois de entrar, ela faz uma de duas coisas:
@@ -85,12 +85,22 @@ Detalhes:
 - Cada grupo tem seu próprio placar e suas próprias fotos. Quem não é do grupo não vê nada.
 - Uma pessoa pode estar em vários grupos e troca pelo botão **Trocar de grupo**.
 - A dona do grupo pode **Gerar novo código** se o link vazar. O link antigo deixa de funcionar, e quem já entrou continua no grupo.
+- O limite de segurança de **6000 ml por dia vale em cada grupo** separadamente.
+- **📅 Histórico do grupo** mostra um calendário do mês; tocando num dia aparecem o vencedor, o placar e as fotos daquele dia.
+- A meta de cada dia fica guardada nos registros: trocar a meta depois não muda a sequência 🔥 nem as conquistas antigas.
+
+## Sem internet
+- O app abre sem internet mostrando o último placar salvo no aparelho (precisa ter sido aberto com internet pelo menos uma vez depois da atualização).
+- Registros feitos sem internet, com ou sem foto, ficam numa fila no celular (até 20) e são enviados sozinhos quando a conexão volta. Aparece a linha "⏳ N registros esperando internet".
+- Um registro guardado há mais de um dia é recusado pelo banco ao ser enviado (regra de data), e o app avisa.
+- Ao sair da conta, os dados guardados para o modo sem internet são apagados do aparelho.
 
 ## Banco de dados
 Todo o banco está num arquivo só, o `setup.sql`, organizado em partes (tabelas, funções, gatilhos, regras de acesso, fotos).
 - **Projeto novo:** rode o `setup.sql` e depois o `agendar-envios.sql` (trocando a URL na linha marcada).
 - **Projeto que já existe:** não precisa rodar nada. Se rodar por engano, não tem problema: ele não apaga dados e só recria as funções e regras na versão atual.
-- As migrações antigas (`migracao-*.sql`, `seguranca.sql`) foram incorporadas ao `setup.sql` e podem ser apagadas do repositório.
+- **Atualização de novembro:** quem já tem o banco rode uma vez o `migracao-novidades.sql` (veja o `PASSO-A-PASSO-NOVIDADES.md`). O `setup.sql` já inclui essa mudança.
+- As migrações antigas (`seguranca.sql` e as `migracao-*.sql` anteriores) foram incorporadas ao `setup.sql` e podem ser apagadas do repositório.
 
 ## Segurança
 1. **Banco:** o `setup.sql` já vem com as proteções: fotos privadas (só quem é do mesmo grupo vê, por links que expiram em 1 hora), nada de foto "emprestada" de outro membro, nada de lançar datas antigas, limite de 6000 ml por pessoa por dia, e cada pessoa só mexe nos próprios dados.
