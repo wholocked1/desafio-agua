@@ -71,7 +71,13 @@ O site precisa estar em **https** (todas as hospedagens acima já entregam isso)
 O app abre em tela cheia com o ícone da gota, pede permissão da câmera na primeira foto e se atualiza sozinho quando você publicar uma versão nova.
 
 ## Atualizar o app
-Troque os arquivos na hospedagem (ou envie para o GitHub, se ela estiver ligada ao repositório). Quem já instalou recebe a versão nova na próxima vez que abrir o app com internet. Se mudar algum arquivo guardado no celular (como os ícones), aumente o número em `CACHE = "agua-v8"` no `sw.js` para `agua-v9` (e assim por diante).
+Envie os arquivos novos para o GitHub. O app se atualiza sozinho nos celulares: ao ser aberto (ou ao voltar para ele), confere a versão publicada e, se mudou, recarrega e mostra "App atualizado ✅". Ele espera se houver uma janela aberta, um envio em andamento ou se estiver sem internet. Não precisa desinstalar.
+
+**A regra para isso funcionar:** toda vez que mudar o `app.js` ou o `app.css`, aumente o número da versão nos três lugares, sempre o mesmo número:
+- `index.html`: `app.css?v=13` e `app.js?v=13` → `?v=14`;
+- `sw.js`: `CACHE = "agua-v13"` → `"agua-v14"` e, na lista `SHELL`, `app.css?v=13` e `app.js?v=13` → `?v=14`.
+
+Versão atual: **13**.
 
 ## Grupos e links de convite
 Qualquer pessoa pode criar uma conta. Depois de entrar, ela faz uma de duas coisas:

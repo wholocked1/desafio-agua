@@ -1769,6 +1769,42 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
 }
 
+// ---------- Atualização automática ----------
+// A versão deste app é o número do "?v=" do app.js no index.html. Ao voltar para o app (e a cada 30 min),
+// ele confere a versão publicada no site; se mudou, recarrega sozinho e avisa "App atualizado".
+// Nunca recarrega no meio de algo: janela aberta, envio em andamento ou sem internet.
+const APP_VERSION = ((document.currentScript && document.currentScript.src.match(/[?&]v=(\d+)/)) || [])[1] || "";
+let lastVersionCheck = 0;
+function busyNow() {
+  return !$("dlg").hidden || flushing || $("note").textContent.endsWith("…") || !navigator.onLine;
+}
+async function checkForUpdate(force) {
+  if (!APP_VERSION || (!force && Date.now() - lastVersionCheck < 60000)) return;
+  lastVersionCheck = Date.now();
+  try {
+    const r = await fetch("/?checar-versao=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) return;
+    const m = (await r.text()).match(/app\.js\?v=(\d+)/);
+    if (!m || m[1] === APP_VERSION) return;
+    // trava contra recarregar sem parar, caso o site ainda esteja publicando
+    if (sessionStorage.getItem("agua-recarregou") === m[1]) return;
+    if (busyNow()) { lastVersionCheck = 0; return; } // tenta de novo na próxima vez
+    sessionStorage.setItem("agua-recarregou", m[1]);
+    const reg = "serviceWorker" in navigator && await navigator.serviceWorker.getRegistration();
+    if (reg) await reg.update().catch(() => {});
+    location.reload();
+  } catch (e) { /* sem internet ou site fora do ar: tenta depois */ }
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkForUpdate(); });
+setInterval(() => { if (document.visibilityState === "visible") checkForUpdate(true); }, 30 * 60000);
+try {
+  if (sessionStorage.getItem("agua-recarregou") === APP_VERSION) {
+    sessionStorage.removeItem("agua-recarregou");
+    setTimeout(() => note("App atualizado ✅", true), 1500);
+  }
+} catch (e) {}
+setTimeout(() => checkForUpdate(true), 5000); // também confere logo depois de abrir
+
 // ---------- Início ----------
 if (configError) {
   note(configError);
