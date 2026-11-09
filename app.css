@@ -1,73 +1,782 @@
-/* Desafio da Água: visual do app. */
+/* =====================================================================
+   Desafio da Água: visual do app
+   =====================================================================
 
-:root{--bg:#f2f8fc;--card:#fff;--tx:#10212e;--mut:#5d7384;--ac:#1d8fe0;--ac2:#7cc8f5;--bd:#d6e6f1;color-scheme:light dark}
-@media (prefers-color-scheme:dark){:root{--bg:#0c1822;--card:#142636;--tx:#e6f1f8;--mut:#93aab9;--ac:#4aaef0;--ac2:#2a6f9c;--bd:#244057}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
-main{max-width:520px;margin:0 auto;padding:16px}
-h1{font-size:1.5rem;margin:8px 0 2px}
-.sub{color:var(--mut);margin:0 0 14px;font-size:.9rem}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:14px;margin-bottom:14px}
-select,input{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:10px;width:100%;margin-top:8px}
-button{font:inherit;cursor:pointer;border:0;border-radius:12px;padding:12px 8px;background:var(--ac);color:#fff;font-weight:600}
-button:disabled{opacity:.6;cursor:wait}
-button.alt{background:transparent;color:var(--ac);border:1px solid var(--bd)}
-.row{display:flex;gap:8px;margin-top:10px}.row>*{flex:1}
-.big{font-size:2rem;font-weight:700;text-align:center}
-.row2{display:flex;align-items:center;gap:10px;margin:10px 0}
-.pos{width:28px;text-align:center;font-size:1.2rem}
-.bar{height:10px;border-radius:6px;background:var(--bd);overflow:hidden;margin-top:4px}
-.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--ac2),var(--ac))}
-.nm{display:flex;justify-content:space-between;gap:8px}
-.mut{color:var(--mut);font-size:.85rem}
-#note{color:#d6453d;font-size:.85rem;text-align:center;min-height:1.2em}
-#note.ok{color:var(--ac)}
-.chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.chip{padding:3px 7px;font-size:.78rem;border-radius:999px;background:transparent;color:var(--tx);border:1px solid var(--bd);font-weight:500}.chip.on{background:var(--ac2);border-color:var(--ac)}.chip.danger{color:#d6453d}
-.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
-.stat{background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:8px 10px}
-.stat b{display:block;font-size:1.15rem}.stat span{color:var(--mut);font-size:.75rem}
-.hchart{position:relative;display:flex;align-items:flex-end;gap:2px;height:120px;margin-top:14px;border-bottom:1px solid var(--bd)}
-.hchart .col{flex:1;height:100%;display:flex;align-items:flex-end;background:none;border:0;padding:0;border-radius:0;cursor:pointer}
-.hchart .col i{display:block;width:100%;border-radius:4px 4px 0 0;background:var(--ac);min-height:2px}
-.hchart .col.low i{opacity:.4}.hchart .col.sel i{outline:2px solid var(--tx);outline-offset:1px}
-.hchart .goal{position:absolute;left:0;right:0;border-top:1px dashed var(--mut);pointer-events:none}
-.hdays{display:flex;gap:2px;margin-top:4px}.hdays span{flex:1;text-align:center;font-size:.62rem;color:var(--mut)}
-.badges{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:10px}
-.badge{border:1px solid var(--bd);border-radius:12px;padding:8px;text-align:center;font-size:.75rem;background:var(--bg)}
-.badge .ic{font-size:1.6rem;display:block}.badge.off{opacity:.45}.badge.off .ic{filter:grayscale(1)}
-.wins{display:flex;flex-direction:column;gap:4px}.win{display:flex;justify-content:space-between;gap:8px;font-size:.85rem;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:6px 10px}.win>span:last-child{color:var(--mut);white-space:nowrap}
-.av{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;font-weight:700;overflow:hidden;line-height:1;user-select:none}
-.av img{width:100%;height:100%;object-fit:cover;display:block}
-.avs{display:inline-flex}.avs .av+.av{margin-left:-6px;box-shadow:0 0 0 2px var(--card)}
-.avtop{display:flex;align-items:center;gap:12px;margin-top:10px}
-.emogrid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:10px}
-.emogrid button{padding:6px 0;font-size:1.25rem;background:transparent;border:1px solid var(--bd);color:var(--tx)}
-.emogrid button.on{border-color:var(--ac);background:var(--ac2)}
-.swatches{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
-.swatches button{width:30px;height:30px;padding:0;border-radius:50%;border:2px solid transparent}
-.swatches button.on{border-color:var(--tx)}
-.pf figcaption{display:flex;align-items:center;gap:4px}
-.win{align-items:center}.win>span:first-child{display:flex;align-items:center;gap:6px;flex:1;min-width:0}.win>span:first-child>span:last-child{min-width:0}
-.btgrid{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px}.btgrid.two{grid-template-columns:1fr 1fr}
-.btgrid button{padding:12px 6px;line-height:1.2}.btgrid button small{display:block;font-weight:500;opacity:.85;font-size:.8rem}
-.blist .nm{align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)}
-.chk{display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer}.chk input{width:auto;margin:0;flex:0 0 auto}
-.steps{list-style:none;counter-reset:st;padding:0;margin:12px 0 0}
-.steps li{counter-increment:st;position:relative;padding:4px 0 12px 38px;line-height:1.45}
-.steps li::before{content:counter(st);position:absolute;left:0;top:2px;width:26px;height:26px;border-radius:50%;background:var(--ac);color:#fff;font-weight:700;font-size:.85rem;display:flex;align-items:center;justify-content:center}
-.steps .ic{display:inline-flex;align-items:center;justify-content:center;vertical-align:-4px;min-width:24px;height:24px;padding:0 4px;border:1px solid var(--bd);border-radius:7px;background:var(--bg);color:var(--ac);font-weight:700}
-.steps .ic svg{width:16px;height:16px}
-.steps b{font-weight:600}
-.iwarn{background:rgba(245,180,0,.16);border:1px solid rgba(245,180,0,.45);border-radius:10px;padding:8px 10px;margin-top:10px;font-size:.9rem}
-.hbtns{display:flex;gap:6px;flex:0 0 auto}
-.qrbox{text-align:center;margin-top:12px}
-.qr{display:inline-block;background:#fff;padding:12px;border-radius:14px;border:1px solid var(--bd);line-height:0}
-.qr svg{width:200px;height:200px;display:block}
-.qrbox .mut{margin:6px 0 0}
-.tabs{display:flex;gap:6px;margin-top:10px}.tabs button{flex:1;padding:8px 6px;background:transparent;color:var(--ac);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
-.gitem{width:100%;text-align:left;margin-top:8px}
-.code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px;margin-top:8px;font-size:.85rem}
-#proofs{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:8px}
-.pf{margin:0}.pf img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;background:var(--bd);display:block}
-.pf figcaption{font-size:.75rem;color:var(--mut);margin-top:2px}
-[hidden]{display:none!important}
+   GUIA RÁPIDO DE EDIÇÃO
+   Quase tudo o que você quer mudar está na parte 1 (cores e medidas).
+   Troque o valor ali e ele muda no app inteiro.
+
+   Quero mudar...                     Mexa em...
+   - a cor principal (botões, links)  --cor-principal (e a versão escura, mais abaixo)
+   - a cor do fundo da página         --cor-fundo
+   - a cor dos cartões                --cor-cartao
+   - a cor do texto                   --cor-texto  /  --cor-texto-fraco
+   - a cor dos avisos de erro         --cor-erro
+   - o quanto as bordas arredondam    --raio-cartao / --raio-botao / --raio-campo
+   - a fonte                          --fonte
+   - a largura máxima do app          --largura-max
+
+   As cores do tema escuro ficam logo abaixo das do tema claro.
+   Para testar, mude, salve, envie ao GitHub e recarregue o app.
+
+   ÍNDICE
+     1. Cores e medidas          5. Tela do grupo
+     2. Base da página           6. Perfil
+     3. Peças comuns             7. Tutorial de instalação
+     4. Login                    8. Utilitários
+   ===================================================================== */
+
+
+/* =====================================================================
+   1. CORES E MEDIDAS
+   ===================================================================== */
+
+/* ----- Tema claro (padrão) ----- */
+:root {
+  /* cores */
+  --cor-fundo: #f2f8fc;          /* fundo da página e dos campos */
+  --cor-cartao: #fff;            /* fundo dos cartões */
+  --cor-texto: #10212e;          /* texto principal */
+  --cor-texto-fraco: #5d7384;    /* textos de apoio, legendas */
+  --cor-principal: #1d8fe0;      /* botões, links, barras */
+  --cor-principal-clara: #7cc8f5;/* início das barras, itens marcados */
+  --cor-borda: #d6e6f1;          /* bordas e linhas */
+  --cor-erro: #d6453d;           /* avisos de erro e botões de apagar */
+  --cor-aviso-fundo: rgba(245, 180, 0, .16);  /* caixa amarela de aviso */
+  --cor-aviso-borda: rgba(245, 180, 0, .45);
+
+  /* letras */
+  --fonte: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --fonte-codigo: ui-monospace, Menlo, Consolas, monospace;
+  --tamanho-texto: 16px;
+
+  /* cantos arredondados */
+  --raio-cartao: 16px;
+  --raio-botao: 12px;
+  --raio-campo: 10px;
+
+  /* espaços */
+  --largura-max: 520px;          /* largura máxima do app em telas grandes */
+  --espaco-pagina: 16px;         /* margem em volta de tudo */
+  --espaco-cartao: 14px;         /* margem dentro dos cartões */
+
+  color-scheme: light dark;
+}
+
+/* ----- Tema escuro (quando o celular está no modo escuro) ----- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cor-fundo: #0c1822;
+    --cor-cartao: #142636;
+    --cor-texto: #e6f1f8;
+    --cor-texto-fraco: #93aab9;
+    --cor-principal: #4aaef0;
+    --cor-principal-clara: #2a6f9c;
+    --cor-borda: #244057;
+  }
+}
+
+
+/* =====================================================================
+   2. BASE DA PÁGINA
+   ===================================================================== */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--cor-fundo);
+  color: var(--cor-texto);
+  font: var(--tamanho-texto)/1.4 var(--fonte);
+  /* respeita o "entalhe" e a barra de baixo do iPhone */
+  padding: env(safe-area-inset-top, 0) 0 env(safe-area-inset-bottom, 0);
+}
+
+main {
+  max-width: var(--largura-max);
+  margin: 0 auto;
+  padding: var(--espaco-pagina);
+}
+
+/* título "💧 Desafio da Água" */
+h1 {
+  font-size: 1.5rem;
+  margin: 8px 0 2px;
+}
+
+/* data embaixo do título */
+.sub {
+  color: var(--cor-texto-fraco);
+  margin: 0 0 14px;
+  font-size: .9rem;
+}
+
+/* botões do topo (📲 Instalar, 👤 Perfil) */
+.hbtns {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+/* aviso no rodapé: vermelho para erro, azul para sucesso */
+#note {
+  color: var(--cor-erro);
+  font-size: .85rem;
+  text-align: center;
+  min-height: 1.2em;
+}
+
+#note.ok {
+  color: var(--cor-principal);
+}
+
+
+/* =====================================================================
+   3. PEÇAS COMUNS (usadas em várias telas)
+   ===================================================================== */
+
+/* ----- Cartão (cada caixa branca) ----- */
+.card {
+  background: var(--cor-cartao);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-cartao);
+  padding: var(--espaco-cartao);
+  margin-bottom: 14px;
+}
+
+/* ----- Campos de texto e listas de escolha ----- */
+select,
+input {
+  font: inherit;
+  color: var(--cor-texto);
+  background: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-campo);
+  padding: 10px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* ----- Botões ----- */
+/* botão principal: azul cheio */
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 0;
+  border-radius: var(--raio-botao);
+  padding: 12px 8px;
+  background: var(--cor-principal);
+  color: #fff;
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+
+/* botão secundário: só o contorno */
+button.alt {
+  background: transparent;
+  color: var(--cor-principal);
+  border: 1px solid var(--cor-borda);
+}
+
+/* botão que parece link sublinhado ("Esqueci minha senha") */
+.linkbtn {
+  background: none;
+  border: 0;
+  color: var(--cor-principal);
+  font-weight: 500;
+  padding: 6px 4px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ----- Linhas de botões lado a lado ----- */
+.row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.row > * {
+  flex: 1;
+}
+
+/* linha com nome à esquerda e valor à direita */
+.nm {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* ----- Textos de apoio ----- */
+.mut {
+  color: var(--cor-texto-fraco);
+  font-size: .85rem;
+}
+
+/* ----- Abas (Hoje / Semana / Mês, Inicial / Emoji / Foto, iPhone / Android) ----- */
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.tabs button {
+  flex: 1;
+  padding: 8px 6px;
+  background: transparent;
+  color: var(--cor-principal);
+  border: 1px solid var(--cor-borda);
+}
+
+.tabs button.on {
+  background: var(--cor-principal);
+  color: #fff;
+  border-color: var(--cor-principal);
+}
+
+/* ----- Botões pequenos e redondos (reações, remover) ----- */
+.chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.chip {
+  padding: 3px 7px;
+  font-size: .78rem;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cor-texto);
+  border: 1px solid var(--cor-borda);
+  font-weight: 500;
+}
+
+.chip.on {
+  background: var(--cor-principal-clara);
+  border-color: var(--cor-principal);
+}
+
+.chip.danger {
+  color: var(--cor-erro);
+}
+
+/* ----- Caixa amarela de aviso ----- */
+.iwarn {
+  background: var(--cor-aviso-fundo);
+  border: 1px solid var(--cor-aviso-borda);
+  border-radius: var(--raio-campo);
+  padding: 8px 10px;
+  margin-top: 10px;
+  font-size: .9rem;
+}
+
+/* ----- Caixa de marcar (ex.: "Foto obrigatória") ----- */
+.chk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+
+.chk input {
+  width: auto;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+/* ----- Texto em fonte de código (link de convite) ----- */
+.code {
+  font-family: var(--fonte-codigo);
+  word-break: break-all;
+  background: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-campo);
+  padding: 8px;
+  margin-top: 8px;
+  font-size: .85rem;
+}
+
+/* ----- Avatar (círculo com letra, emoji ou foto) ----- */
+.av {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  overflow: hidden;
+  line-height: 1;
+  user-select: none;
+}
+
+.av img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* vários avatares sobrepostos (empate de vencedores) */
+.avs {
+  display: inline-flex;
+}
+
+.avs .av + .av {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--cor-cartao);
+}
+
+
+/* =====================================================================
+   4. LOGIN (entrar, criar conta, esqueci a senha, nova senha)
+   ===================================================================== */
+
+/* espaço do CAPTCHA (só ocupa lugar quando aparece) */
+.captcha {
+  margin-top: 10px;
+}
+
+.captcha:empty {
+  margin-top: 0;
+}
+
+/* mensagem de sucesso (ex.: "Pronto! ... enviamos um link") */
+.authok {
+  color: var(--cor-principal);
+}
+
+
+/* =====================================================================
+   5. TELA DO GRUPO
+   ===================================================================== */
+
+/* ----- Lista de grupos ----- */
+.gitem {
+  width: 100%;
+  text-align: left;
+  margin-top: 8px;
+}
+
+/* ----- Quanto você bebeu (número grande) ----- */
+.big {
+  font-size: 2rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ----- Botões das garrafinhas (📸) ----- */
+.btgrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* com 2 ou mais garrafinhas: duas colunas */
+.btgrid.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+.btgrid button {
+  padding: 12px 6px;
+  line-height: 1.2;
+}
+
+/* tamanho em ml, embaixo do nome */
+.btgrid button small {
+  display: block;
+  font-weight: 500;
+  opacity: .85;
+  font-size: .8rem;
+}
+
+/* ----- Placar ----- */
+/* cada linha: posição, avatar, nome e barra */
+.row2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+/* 🥇 🥈 🥉 ou número da posição */
+.pos {
+  width: 28px;
+  text-align: center;
+  font-size: 1.2rem;
+}
+
+/* barra de progresso */
+.bar {
+  height: 10px;
+  border-radius: 6px;
+  background: var(--cor-borda);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--cor-principal-clara), var(--cor-principal));
+}
+
+/* ----- Vencedores (🏆 ontem, semana, mês) ----- */
+.wins {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.win {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: .85rem;
+  background: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-campo);
+  padding: 6px 10px;
+}
+
+/* lado esquerdo: avatares + texto (quebra linha se for longo) */
+.win > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.win > span:first-child > span:last-child {
+  min-width: 0;
+}
+
+/* lado direito: os ml, sempre numa linha só */
+.win > span:last-child {
+  color: var(--cor-texto-fraco);
+  white-space: nowrap;
+}
+
+/* ----- Provas de hoje (galeria de fotos) ----- */
+#proofs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pf {
+  margin: 0;
+}
+
+.pf img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: var(--raio-campo);
+  background: var(--cor-borda);
+  display: block;
+}
+
+/* legenda da foto: avatar, nome, ml e hora */
+.pf figcaption {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .75rem;
+  color: var(--cor-texto-fraco);
+  margin-top: 2px;
+}
+
+/* ----- Convite: QR code ----- */
+.qrbox {
+  text-align: center;
+  margin-top: 12px;
+}
+
+/* o QR fica sempre preto no branco, até no tema escuro (a câmera lê melhor) */
+.qr {
+  display: inline-block;
+  background: #fff;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--cor-borda);
+  line-height: 0;
+}
+
+.qr svg {
+  width: 200px;
+  height: 200px;
+  display: block;
+}
+
+.qrbox .mut {
+  margin: 6px 0 0;
+}
+
+
+/* =====================================================================
+   6. PERFIL
+   ===================================================================== */
+
+/* ----- Topo: avatar grande + nome + e-mail ----- */
+.avtop {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+/* ----- Escolha de emoji do avatar ----- */
+.emogrid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.emogrid button {
+  padding: 6px 0;
+  font-size: 1.25rem;
+  background: transparent;
+  border: 1px solid var(--cor-borda);
+  color: var(--cor-texto);
+}
+
+.emogrid button.on {
+  border-color: var(--cor-principal);
+  background: var(--cor-principal-clara);
+}
+
+/* ----- Bolinhas de cor do avatar ----- */
+.swatches {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.swatches button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.swatches button.on {
+  border-color: var(--cor-texto);
+}
+
+/* ----- Lista de garrafinhas ----- */
+.blist .nm {
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+/* ----- Histórico: os 4 números ----- */
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.stat {
+  background: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-botao);
+  padding: 8px 10px;
+}
+
+.stat b {
+  display: block;
+  font-size: 1.15rem;
+}
+
+.stat span {
+  color: var(--cor-texto-fraco);
+  font-size: .75rem;
+}
+
+/* ----- Histórico: gráfico dos 14 dias ----- */
+.hchart {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 120px;
+  margin-top: 14px;
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+/* cada dia é um botão invisível que contém a barra */
+.hchart .col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.hchart .col i {
+  display: block;
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  background: var(--cor-principal);
+  min-height: 2px;
+}
+
+/* dia abaixo da meta: barra mais clara */
+.hchart .col.low i {
+  opacity: .4;
+}
+
+/* dia tocado */
+.hchart .col.sel i {
+  outline: 2px solid var(--cor-texto);
+  outline-offset: 1px;
+}
+
+/* linha tracejada da meta */
+.hchart .goal {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--cor-texto-fraco);
+  pointer-events: none;
+}
+
+/* datas embaixo do gráfico */
+.hdays {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.hdays span {
+  flex: 1;
+  text-align: center;
+  font-size: .62rem;
+  color: var(--cor-texto-fraco);
+}
+
+/* ----- Conquistas ----- */
+.badges {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.badge {
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-botao);
+  padding: 8px;
+  text-align: center;
+  font-size: .75rem;
+  background: var(--cor-fundo);
+}
+
+.badge .ic {
+  font-size: 1.6rem;
+  display: block;
+}
+
+/* conquista que ainda falta: apagada e sem cor */
+.badge.off {
+  opacity: .45;
+}
+
+.badge.off .ic {
+  filter: grayscale(1);
+}
+
+
+/* =====================================================================
+   7. TUTORIAL DE INSTALAÇÃO
+   ===================================================================== */
+
+/* passos numerados (1, 2, 3...) */
+.steps {
+  list-style: none;
+  counter-reset: st;
+  padding: 0;
+  margin: 12px 0 0;
+}
+
+.steps li {
+  counter-increment: st;
+  position: relative;
+  padding: 4px 0 12px 38px;
+  line-height: 1.45;
+}
+
+/* o círculo azul com o número */
+.steps li::before {
+  content: counter(st);
+  position: absolute;
+  left: 0;
+  top: 2px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--cor-principal);
+  color: #fff;
+  font-weight: 700;
+  font-size: .85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ícones desenhados no meio do texto (Compartilhar, ⋮) */
+.steps .ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: -4px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--cor-borda);
+  border-radius: 7px;
+  background: var(--cor-fundo);
+  color: var(--cor-principal);
+  font-weight: 700;
+}
+
+.steps .ic svg {
+  width: 16px;
+  height: 16px;
+}
+
+.steps b {
+  font-weight: 600;
+}
+
+
+/* =====================================================================
+   8. UTILITÁRIOS
+   ===================================================================== */
+
+/* esconde de verdade o que estiver marcado como escondido */
+[hidden] {
+  display: none !important;
+}

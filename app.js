@@ -2,13 +2,21 @@
 // A configuração (URL, chaves) fica no config.js. O visual fica no app.css.
 // Este arquivo é carregado no fim do index.html, depois da biblioteca do Supabase e do config.js.
 
-// ====== CONFIGURAÇÃO: fica no config.js (não edite aqui) ======
+// ====== LEITURA DA CONFIGURAÇÃO ======
+// Os valores vêm do config.js. É lá que você edita, nunca aqui.
+// Estas linhas não são uma segunda configuração: elas só pegam o que está no config.js
+// e preparam para o resto do app, cobrindo os casos em que algo falta ou veio errado:
+//   - URL ou chave faltando: fica o texto "COLE_AQUI...", e o app mostra no rodapé o que falta preencher;
+//   - GOAL faltando, zero ou com texto: usa 2000 ml;
+//   - REQUIRE_PHOTO_ALL: só vale se for exatamente true;
+//   - TURNSTILE_SITE_KEY vazia: o CAPTCHA fica desligado.
 const CFG = window.APP_CONFIG || {};
 const SUPABASE_URL = String(CFG.SUPABASE_URL || "COLE_AQUI_A_PROJECT_URL");
 const SUPABASE_ANON_KEY = String(CFG.SUPABASE_ANON_KEY || "COLE_AQUI_A_ANON_KEY");
 const VAPID_PUBLIC_KEY = String(CFG.VAPID_PUBLIC_KEY || "COLE_AQUI_A_CHAVE_PUBLICA_VAPID");
 const GOAL = parseInt(CFG.GOAL, 10) > 0 ? parseInt(CFG.GOAL, 10) : 2000;
 const REQUIRE_PHOTO_ALL = CFG.REQUIRE_PHOTO_ALL === true;
+const TURNSTILE_SITE_KEY = String(CFG.TURNSTILE_SITE_KEY || "").trim();
 // ==============================================================
 
 const $ = id => document.getElementById(id);
@@ -18,6 +26,11 @@ const lsDel = k => { try { localStorage.removeItem(k); } catch (e) {} };
 const note = (t, ok) => { const n = $("note"); n.textContent = t || ""; n.className = ok ? "ok" : ""; };
 window.addEventListener("error", e => note("Erro: " + (e.message || "desconhecido")));
 window.addEventListener("unhandledrejection", e => note("Erro: " + ((e.reason && e.reason.message) || "desconhecido")));
+
+// Link do e-mail de "Esqueci minha senha": o Supabase volta com #...type=recovery (ou ?redefinir=1, que o app pede)
+const urlHash = new URLSearchParams(location.hash.replace(/^#/, ""));
+let recoveryLink = urlHash.get("type") === "recovery" || /[?&]redefinir=1\b/.test(location.search);
+const linkError = urlHash.get("error_code") || urlHash.get("error") || "";
 
 let sb = null, configError = "";
 if (!window.APP_CONFIG) {
@@ -57,64 +70,217 @@ if (inviteParam) lsSet("agua-invite", inviteParam);
 
 let lastScreen = "groups";
 function screen(name) {
-  ["auth", "groups", "app", "profile", "install"].forEach(s => $(s).hidden = s !== name);
+  ["auth", "reset", "groups", "app", "profile", "install"].forEach(s => $(s).hidden = s !== name);
   if (name !== "profile" && name !== "install") lastScreen = name;
-  $("profileBtn").hidden = name === "auth" || name === "profile" || name === "install";
+  $("profileBtn").hidden = name === "auth" || name === "reset" || name === "profile" || name === "install";
   updateInstallBtn(name);
   window.scrollTo(0, 0);
 }
 
 // ---------- Login ----------
-function setMode(isSignup) {
-  signup = isSignup;
-  $("authTitle").textContent = isSignup ? "Criar conta" : "Entrar";
-  $("aName").hidden = !isSignup;
-  $("aGo").textContent = isSignup ? "Criar conta" : "Entrar";
-  $("aSwitch").textContent = isSignup ? "Já tenho conta" : "Não tenho conta";
-  $("aPass").autocomplete = isSignup ? "new-password" : "current-password";
-  $("aMsg").textContent = "";
+// Mensagens do Supabase traduzidas (o texto original vem em inglês)
+function authMsg(e) {
+  const code = String((e && (e.code || e.error_code)) || ""), m = String((e && e.message) || e || "");
+  const has = (...k) => k.some(x => code === x || m.toLowerCase().includes(x.toLowerCase()));
+  if (has("invalid_credentials", "Invalid login credentials")) return "E-mail ou senha incorretos. Confira e tente de novo, ou use \"Esqueci minha senha\".";
+  if (has("user_already_exists", "email_exists", "User already registered", "already been registered")) return "Este e-mail já tem conta. Toque em \"Já tenho conta\" para entrar, ou em \"Esqueci minha senha\".";
+  if (has("email_not_confirmed", "Email not confirmed")) return "Falta confirmar o e-mail: abra o link que enviamos (confira o spam) e depois entre.";
+  if (has("same_password", "should be different from the old")) return "A nova senha precisa ser diferente da anterior.";
+  if (has("weak_password", "Password should be at least", "Password should contain")) { const n = (m.match(/\d+/) || ["8"])[0]; return "Senha muito fraca: use pelo menos " + n + " caracteres, misturando letras e números."; }
+  if (has("over_email_send_rate_limit", "email rate limit")) return "Muitos e-mails enviados agora. Espere alguns minutos e tente de novo.";
+  if (has("over_request_rate_limit", "only request this after", "rate limit")) return "Muitas tentativas seguidas. Espere um minuto e tente de novo.";
+  if (has("email_address_invalid", "invalid format", "Unable to validate email")) return "Esse e-mail não parece válido. Confira se digitou certo.";
+  if (has("signup_disabled", "Signups not allowed", "signups are disabled")) return "Cadastros estão fechados no momento. Fale com quem organiza o desafio.";
+  if (has("captcha_failed", "captcha")) return "Não conseguimos confirmar que você não é um robô. Espere a verificação terminar e tente de novo.";
+  if (has("otp_expired", "expired", "invalid or has expired", "session_not_found", "Auth session missing")) return "Este link expirou ou já foi usado. Peça um novo em \"Esqueci minha senha\".";
+  if (has("Failed to fetch", "NetworkError", "Load failed")) return "Sem conexão com o servidor. Confira a internet e tente de novo.";
+  return "Algo deu errado: " + (m || "erro desconhecido") + ".";
 }
-$("aSwitch").onclick = () => setMode(!signup);
+
+// ----- CAPTCHA (Cloudflare Turnstile). Só liga se TURNSTILE_SITE_KEY estiver no config.js -----
+let captchaToken = "", captchaId = null, captchaLoading = null;
+function loadTurnstile() {
+  if (window.turnstile) return Promise.resolve();
+  if (!captchaLoading) captchaLoading = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    s.async = true; s.onload = res;
+    s.onerror = () => { captchaLoading = null; rej(new Error("captcha")); };
+    document.head.appendChild(s);
+  });
+  return captchaLoading;
+}
+async function setupCaptcha() {
+  if (!TURNSTILE_SITE_KEY) return;
+  $("captcha").hidden = false;
+  try { await loadTurnstile(); }
+  catch (e) { $("aMsg").textContent = "Não consegui carregar a verificação anti-robô. Confira a internet ou desative bloqueadores de anúncios."; return; }
+  if (captchaId !== null) return;
+  captchaId = window.turnstile.render("#captcha", {
+    sitekey: TURNSTILE_SITE_KEY, language: "pt-br", theme: "auto", size: "flexible",
+    appearance: "interaction-only", // só aparece quando precisa que a pessoa toque
+    callback: t => { captchaToken = t; },
+    "expired-callback": () => { captchaToken = ""; },
+    "error-callback": () => { captchaToken = ""; }
+  });
+}
+function resetCaptcha() {
+  captchaToken = "";
+  if (window.turnstile && captchaId !== null) { try { window.turnstile.reset(captchaId); } catch (e) {} }
+}
+function captchaMissing() {
+  if (!TURNSTILE_SITE_KEY || captchaToken) return false;
+  $("aMsg").textContent = "Só um instante: estamos confirmando que você não é um robô. Tente de novo em alguns segundos.";
+  return true;
+}
+const withCaptcha = o => (TURNSTILE_SITE_KEY ? Object.assign(o, { captchaToken }) : o);
+
+// ----- Telas: entrar, criar conta, esqueci a senha -----
+let authMode = "login", resendTimer = null;
+function setMode(mode) {
+  if (mode !== "forgot" && resendTimer) { clearInterval(resendTimer); resendTimer = null; }
+  authMode = mode; signup = mode === "signup";
+  const forgot = mode === "forgot";
+  $("authTitle").textContent = signup ? "Criar conta" : forgot ? "Esqueci minha senha" : "Entrar";
+  $("authHint").textContent = forgot ? "Digite o e-mail da sua conta. Vamos mandar um link para você criar uma senha nova." : "";
+  $("authHint").hidden = !forgot;
+  $("aName").hidden = !signup;
+  $("aPass").hidden = forgot;
+  $("aPass").placeholder = signup ? "Senha (mín. 8 caracteres)" : "Senha";
+  $("aPass").autocomplete = signup ? "new-password" : "current-password";
+  $("aGo").textContent = signup ? "Criar conta" : forgot ? "Enviar link" : "Entrar";
+  $("aSwitch").textContent = signup ? "Já tenho conta" : forgot ? "Voltar para Entrar" : "Não tenho conta";
+  $("aForgotRow").hidden = mode !== "login";
+  $("aMsg").textContent = ""; $("aMsg").className = "mut";
+  if (!resendTimer) $("aGo").disabled = false;
+}
+$("aSwitch").onclick = () => setMode(authMode === "login" ? "signup" : "login");
+$("aForgot").onclick = () => { setMode("forgot"); $("aEmail").focus(); };
+
+function authOk(t) { $("aMsg").textContent = t; $("aMsg").className = "mut authok"; }
 
 $("aGo").onclick = async () => {
   const email = $("aEmail").value.trim(), pass = $("aPass").value, name = $("aName").value.trim();
-  if (!email || !pass || (signup && (!name || pass.length < 8))) { $("aMsg").textContent = "Preencha tudo (a senha de uma conta nova precisa de 8+ caracteres)."; return; }
-  $("aGo").disabled = true; $("aMsg").textContent = "";
+  if (!email) { $("aMsg").textContent = "Digite o seu e-mail."; return; }
+  if (authMode !== "forgot" && !pass) { $("aMsg").textContent = "Digite a sua senha."; return; }
+  if (signup && !name) { $("aMsg").textContent = "Digite o seu nome: é ele que aparece no placar."; return; }
+  if (signup && pass.length < 8) { $("aMsg").textContent = "A senha precisa ter pelo menos 8 caracteres."; return; }
+  if (captchaMissing()) return;
+  $("aGo").disabled = true; $("aMsg").textContent = ""; $("aMsg").className = "mut";
   try {
+    if (authMode === "forgot") {
+      const { error } = await sb.auth.resetPasswordForEmail(email, withCaptcha({ redirectTo: location.origin + location.pathname + "?redefinir=1" }));
+      if (error) throw error;
+      authOk("Pronto! Se existir uma conta com " + email + ", enviamos um link para criar uma senha nova. Confira a caixa de entrada e o spam.");
+      startResendCooldown();
+      return;
+    }
     if (signup) {
-      const { data, error } = await sb.auth.signUp({ email, password: pass, options: {
+      const { data, error } = await sb.auth.signUp({ email, password: pass, options: withCaptcha({
           data: { name },
           // o link do e-mail volta para este mesmo endereço (e mantém o convite, se houver)
           emailRedirectTo: location.origin + location.pathname + (lsGet("agua-invite") ? "?convite=" + encodeURIComponent(lsGet("agua-invite")) : "")
-        } });
+        }) });
       if (error) throw error;
-      if (!data.session) $("aMsg").textContent = "Conta criada! Confirme pelo e-mail que enviamos e depois entre.";
+      if (!data.session) authOk("Conta criada! Confirme pelo e-mail que enviamos (confira o spam) e depois entre.");
     } else {
-      const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+      const { error } = await sb.auth.signInWithPassword({ email, password: pass, options: withCaptcha({}) });
       if (error) throw error;
     }
-  } catch (e) { $("aMsg").textContent = e.message || "Erro ao entrar."; }
-  $("aGo").disabled = false;
+  } catch (e) { $("aMsg").textContent = authMsg(e); }
+  finally { resetCaptcha(); if (!resendTimer) $("aGo").disabled = false; }
 };
 
-const logout = () => sb.auth.signOut();
-$("logout").onclick = logout;
-
-function showAuth() {
-  started = null; group = null; myGroups = [];
-  if (channel) { sb.removeChannel(channel); channel = null; }
-  screen("auth");
-  const hasInvite = !!lsGet("agua-invite");
-  setMode(hasInvite);
-  if (hasInvite) $("aMsg").textContent = "Você foi convidado! Crie sua conta (ou entre, se já tiver) para participar do grupo.";
+// evita pedir vários e-mails seguidos (o Supabase só aceita um a cada 60 s)
+function startResendCooldown() {
+  let s = 60;
+  const tick = () => {
+    if (authMode !== "forgot") { clearInterval(resendTimer); resendTimer = null; $("aGo").disabled = false; return; }
+    if (s <= 0) { clearInterval(resendTimer); resendTimer = null; $("aGo").disabled = false; $("aGo").textContent = "Enviar de novo"; return; }
+    $("aGo").disabled = true; $("aGo").textContent = "Enviar de novo em " + s-- + " s";
+  };
+  tick(); resendTimer = setInterval(tick, 1000);
 }
 
-if (sb) sb.auth.onAuthStateChange((_ev, session) => {
-  if (session && session.user) {
-    if (started === session.user.id) return;
-    me = session.user; started = me.id;
-    setTimeout(afterLogin, 0); // evita chamar o Supabase dentro do callback de auth
-  } else { me = null; showAuth(); }
+// ----- Nova senha (depois de tocar no link do e-mail) -----
+let noteAfterLogin = "";
+function showReset() { screen("reset"); note(""); $("npMsg").textContent = ""; $("npPass").focus(); }
+$("npGo").onclick = async () => {
+  const a = $("npPass").value, b = $("npPass2").value;
+  if (a.length < 8) { $("npMsg").textContent = "A senha precisa ter pelo menos 8 caracteres."; return; }
+  if (a !== b) { $("npMsg").textContent = "As duas senhas não são iguais."; return; }
+  $("npGo").disabled = true; $("npMsg").textContent = "";
+  try {
+    const { data, error } = await sb.auth.updateUser({ password: a });
+    if (error) throw error;
+    recoveryLink = false;
+    try { history.replaceState(null, "", location.pathname); } catch (e) {}
+    $("npPass").value = $("npPass2").value = "";
+    noteAfterLogin = "Senha alterada! Você já está dentro do app."; // mostrado quando o grupo terminar de abrir
+    enterApp(data && data.user);
+  } catch (e) { $("npMsg").textContent = authMsg(e); }
+  $("npGo").disabled = false;
+};
+
+// ----- Sair: desliga os lembretes DESTE aparelho antes de sair da conta -----
+async function forgetThisDevice() {
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    if (!sub) return;
+    await sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
+    await sub.unsubscribe();
+  } catch (e) { /* sem lembretes neste aparelho: segue */ }
+}
+const logout = async () => { $("logout").disabled = true; await forgetThisDevice(); await sb.auth.signOut(); $("logout").disabled = false; };
+$("logout").onclick = logout;
+
+// aviso de link vencido ou já usado, mostrado uma vez, na primeira vez que a tela de login abrir
+let linkMsgPending = !!linkError;
+function linkProblemMsg() {
+  if (linkMsgPending) {
+    linkMsgPending = false; recoveryLink = false;
+    try { history.replaceState(null, "", location.pathname + location.search.replace(/[?&]redefinir=1\b/, "")); } catch (e) {}
+    return authMsg({ code: linkError, message: urlHash.get("error_description") || "" });
+  }
+  if (recoveryLink) { // link de redefinição sem sessão válida = vencido
+    recoveryLink = false;
+    try { history.replaceState(null, "", location.pathname); } catch (e) {}
+    return "Este link expirou ou já foi usado. Peça um novo em \"Esqueci minha senha\".";
+  }
+  return "";
+}
+
+function showAuth(msg) {
+  msg = msg || linkProblemMsg();
+  if (!msg && !$("auth").hidden && $("aMsg").textContent) msg = $("aMsg").textContent; // não apaga um aviso que já está na tela
+  started = null; group = null; myGroups = [];
+  if (channel) { sb.removeChannel(channel); channel = null; }
+  // depois de sair, ninguém pode entrar de novo só tocando em "Entrar": a senha é apagada do campo
+  $("aPass").value = ""; $("npPass").value = ""; $("npPass2").value = "";
+  screen("auth");
+  const hasInvite = !!lsGet("agua-invite");
+  setMode(hasInvite ? "signup" : "login");
+  if (msg) $("aMsg").textContent = msg;
+  else if (hasInvite) authOk("Você foi convidado! Crie sua conta (ou entre, se já tiver) para participar do grupo.");
+  setupCaptcha();
+}
+
+function enterApp(user) {
+  if (!user || started === user.id) return;
+  me = user; started = me.id;
+  setTimeout(afterLogin, 0); // evita chamar o Supabase dentro do callback de auth
+}
+
+if (sb) sb.auth.onAuthStateChange((ev, session) => {
+  if (ev === "PASSWORD_RECOVERY" || (recoveryLink && session)) {
+    recoveryLink = true;
+    if (session && session.user) { me = session.user; showReset(); }
+    return;
+  }
+  if (session && session.user) enterApp(session.user);
+  else { me = null; showAuth(); }
 });
 
 // ---------- Grupos ----------
@@ -137,6 +303,7 @@ async function afterLogin() {
   const saved = lsGet("agua-group");
   const g = myGroups.find(x => x.id === saved) || (myGroups.length === 1 ? myGroups[0] : null);
   if (g) openGroup(g); else showGroups();
+  if (noteAfterLogin) { note(noteAfterLogin, true); noteAfterLogin = ""; }
   maybeShowInstallOnce();
 }
 
@@ -375,7 +542,11 @@ async function load() {
     .eq("group_id", gid).eq("day", day).order("created_at", { ascending: false });
   if (error) { note("Erro ao carregar: " + error.message); return; }
   if (!group || group.id !== gid) return; // trocou de grupo no meio do caminho
-  note(""); logs = data || []; render(); loadMembers(); loadWinner(); loadHistory(); loadReactions();
+  // limpa o aviso de erro de carregamento e os de "em andamento" ("Enviando…");
+  // os demais (ex.: "Senha alterada!") continuam na tela
+  const nt = $("note").textContent;
+  if (nt.startsWith("Erro ao carregar") || nt.endsWith("…")) note("");
+  logs = data || []; render(); loadMembers(); loadWinner(); loadHistory(); loadReactions();
 }
 
 const signed = {};

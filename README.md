@@ -95,7 +95,7 @@ Todo o banco está num arquivo só, o `setup.sql`, organizado em partes (tabelas
 ## Segurança
 1. **Banco:** o `setup.sql` já vem com as proteções: fotos privadas (só quem é do mesmo grupo vê, por links que expiram em 1 hora), nada de foto "emprestada" de outro membro, nada de lançar datas antigas, limite de 6000 ml por pessoa por dia, e cada pessoa só mexe nos próprios dados.
 2. **Hospedagem:** o `vercel.json` já manda cabeçalhos de segurança (política de conteúdo, bloqueio de iframe etc.). Se um dia você usar um domínio próprio no Supabase, inclua-o no `connect-src` e no `img-src` desse arquivo.
-3. **Supabase, Authentication:** em **Sign In / Providers → Email**, suba **Minimum password length** para 8 ou mais. **Não** ative o CAPTCHA (Attack Protection) por enquanto: ele exige mudanças no código do app e, ligado sem elas, bloqueia todos os cadastros e logins.
+3. **Supabase, Authentication:** em **Sign In / Providers → Email**, suba **Minimum password length** para 8 ou mais. Para ligar o CAPTCHA (Cloudflare Turnstile), siga o `PASSO-A-PASSO-LOGIN.md`: primeiro a chave no `config.js`, só depois a opção no Supabase.
 4. **Chaves:** só a chave publishable/anon vai no site. A `secret`/`service_role` e a senha do banco nunca.
 5. **Opcional:** para travar a biblioteca do Supabase carregada pela CDN, adicione o atributo `integrity` (SRI) na tag `<script>` dela.
 

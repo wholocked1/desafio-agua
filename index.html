@@ -29,12 +29,25 @@
   <!-- LOGIN -->
   <section id="auth" class="card" hidden>
     <strong id="authTitle">Entrar</strong>
+    <p class="mut" id="authHint" style="margin:6px 0 0" hidden></p>
     <input id="aName" maxlength="30" placeholder="Seu nome (para o placar)" autocomplete="nickname" hidden>
-    <input id="aEmail" type="email" placeholder="E-mail" autocomplete="email">
-    <input id="aPass" type="password" placeholder="Senha (nova: mín. 8 caracteres)" autocomplete="current-password">
+    <input id="aEmail" type="email" placeholder="E-mail" autocomplete="email" inputmode="email" autocapitalize="off">
+    <input id="aPass" type="password" placeholder="Senha" autocomplete="current-password">
+    <div id="captcha" class="captcha" hidden></div>
     <div class="row"><button id="aGo">Entrar</button></div>
     <div class="row"><button class="alt" id="aSwitch">Não tenho conta</button></div>
-    <p class="mut" id="aMsg"></p>
+    <div class="row" id="aForgotRow"><button class="linkbtn" id="aForgot">Esqueci minha senha</button></div>
+    <p class="mut" id="aMsg" role="status" aria-live="polite"></p>
+  </section>
+
+  <!-- NOVA SENHA (depois de abrir o link do e-mail) -->
+  <section id="reset" class="card" hidden>
+    <strong>Criar nova senha</strong>
+    <p class="mut" style="margin:6px 0 0">Escolha uma senha nova para a sua conta. Depois disso, você já entra no app.</p>
+    <input id="npPass" type="password" placeholder="Nova senha (mín. 8 caracteres)" autocomplete="new-password">
+    <input id="npPass2" type="password" placeholder="Repita a nova senha" autocomplete="new-password">
+    <div class="row"><button id="npGo">Salvar nova senha</button></div>
+    <p class="mut" id="npMsg" role="status" aria-live="polite"></p>
   </section>
 
   <!-- GRUPOS -->
