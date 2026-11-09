@@ -16,5 +16,8 @@ window.APP_CONFIG = {
   GOAL: 2000,
 
   // true = exige foto também nos botões +200/+300/+500/Outro valor
-  REQUIRE_PHOTO_ALL: false
+  REQUIRE_PHOTO_ALL: false,
+
+  //chave pública do CAPTCHA
+  TURNSTILE_SITE_KEY: "0x4AAAAAAF6F7HPNO6uaksFm"
 };
