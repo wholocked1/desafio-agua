@@ -23,7 +23,8 @@
      1. Cores e medidas          5. Tela do grupo
      2. Base da página           6. Perfil
      3. Peças comuns             7. Tutorial de instalação
-     4. Login                    8. Utilitários
+     4. Login                    8. Janela do app
+                                 9. Utilitários
    ===================================================================== */
 
 
@@ -121,15 +122,32 @@ h1 {
 }
 
 /* aviso no rodapé: vermelho para erro, azul para sucesso */
+/* aviso flutuante no pé da tela (erros e confirmações), visível de qualquer ponto da página */
 #note {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 40;                       /* abaixo da janela do app (50) */
+  width: max-content;
+  max-width: min(92vw, var(--largura-max));
+  padding: 10px 14px;
+  border-radius: var(--raio-botao);
+  border: 1px solid var(--cor-erro);
+  background: var(--cor-cartao);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .18);
   color: var(--cor-erro);
-  font-size: .85rem;
+  font-size: .9rem;
   text-align: center;
-  min-height: 1.2em;
+}
+
+#note:empty {
+  display: none;
 }
 
 #note.ok {
   color: var(--cor-principal);
+  border-color: var(--cor-principal);
 }
 
 
@@ -373,6 +391,33 @@ button.alt {
   text-align: center;
 }
 
+/* ----- Registros guardados sem internet ("⏳ 2 registros esperando internet") ----- */
+.queue {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: var(--raio-campo);
+  background: var(--cor-aviso-fundo);
+  border: 1px solid var(--cor-aviso-borda);
+  font-size: .9rem;
+  text-align: center;
+}
+
+/* ----- Convite: "Código: abc123  [Copiar código]" ----- */
+.inv-code {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.inv-code span {
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.inv-code button {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+}
+
 /* ----- Botões das garrafinhas (📸) ----- */
 .btgrid {
   display: grid;
@@ -526,6 +571,97 @@ button.alt {
 }
 
 
+/* ----- Histórico do grupo (calendário) ----- */
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.cal-head button {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+/* letras dos dias da semana e a grade dos dias */
+.cal-week,
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.cal-week span {
+  text-align: center;
+  font-size: .7rem;
+  color: var(--cor-texto-fraco);
+}
+
+/* cada dia do mês */
+.cal-day {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0;
+  border-radius: var(--raio-campo);
+  border: 1px solid transparent;
+  background: var(--cor-fundo);
+  color: var(--cor-texto);
+  font-weight: 500;
+  font-size: .85rem;
+}
+
+/* marca ✅ / 💧 embaixo do número */
+.cal-day small {
+  font-size: .7rem;
+  line-height: 1;
+  min-height: .7rem;
+}
+
+/* alguém do grupo registrou água neste dia */
+.cal-day.has {
+  background: var(--cor-principal-clara);
+}
+
+.cal-day.today {
+  border-color: var(--cor-principal);
+  font-weight: 700;
+}
+
+/* dia escolhido */
+.cal-day.sel {
+  outline: 2px solid var(--cor-texto);
+  outline-offset: 1px;
+}
+
+/* dias que ainda não chegaram */
+.cal-day:disabled {
+  opacity: .35;
+  cursor: default;
+}
+
+/* espaços vazios antes do dia 1 */
+.cal-blank {
+  aspect-ratio: 1;
+}
+
+/* fotos do dia escolhido (mesmo jeito das provas de hoje) */
+.proofs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+
 /* =====================================================================
    6. PERFIL
    ===================================================================== */
@@ -577,6 +713,28 @@ button.alt {
 
 .swatches button.on {
   border-color: var(--cor-texto);
+}
+
+/* ----- Horários de lembrete (7h às 22h) ----- */
+.hours {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.hours button {
+  padding: 8px 0;
+  background: transparent;
+  color: var(--cor-texto);
+  border: 1px solid var(--cor-borda);
+  font-weight: 500;
+}
+
+.hours button.on {
+  background: var(--cor-principal);
+  border-color: var(--cor-principal);
+  color: #fff;
 }
 
 /* ----- Lista de garrafinhas ----- */
@@ -773,7 +931,59 @@ button.alt {
 
 
 /* =====================================================================
-   8. UTILITÁRIOS
+   8. JANELA DO APP (confirmações e "Outro valor")
+   ===================================================================== */
+
+/* fundo escurecido que cobre a tela */
+.dlg {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--espaco-pagina);
+  background: rgba(8, 20, 30, .55);
+}
+
+/* a caixa da janela */
+.dlg-box {
+  width: 100%;
+  max-width: 380px;
+  background: var(--cor-cartao);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-cartao);
+  padding: 18px var(--espaco-cartao) var(--espaco-cartao);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+}
+
+.dlg-title {
+  display: block;
+  font-size: 1.1rem;
+}
+
+/* texto da pergunta (respeita as quebras de linha) */
+.dlg-text {
+  margin: 8px 0 0;
+  color: var(--cor-texto-fraco);
+  white-space: pre-line;
+  line-height: 1.45;
+}
+
+.dlg-err {
+  margin: 8px 0 0;
+  color: var(--cor-erro);
+  font-size: .85rem;
+}
+
+/* botão de ação perigosa (apagar, sair, excluir) */
+button.danger {
+  background: var(--cor-erro);
+}
+
+
+/* =====================================================================
+   9. UTILITÁRIOS
    ===================================================================== */
 
 /* esconde de verdade o que estiver marcado como escondido */

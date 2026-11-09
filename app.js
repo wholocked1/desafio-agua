@@ -67,7 +67,14 @@ function askDialog(o) {
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 const lsDel = k => { try { localStorage.removeItem(k); } catch (e) {} };
-const note = (t, ok) => { const n = $("note"); n.textContent = t || ""; n.className = ok ? "ok" : ""; };
+// aviso flutuante: some sozinho (confirmações em 4 s, erros em 8 s) ou ao tocar; "Enviando…" fica até terminar
+let noteTimer = null;
+const note = (t, ok) => {
+  const n = $("note"); n.textContent = t || ""; n.className = ok ? "ok" : "";
+  clearTimeout(noteTimer);
+  if (t && !t.endsWith("…")) noteTimer = setTimeout(() => { if (n.textContent === t) n.textContent = ""; }, ok ? 4000 : 8000);
+};
+$("note").onclick = () => note("");
 window.addEventListener("error", e => note("Erro: " + (e.message || "desconhecido")));
 window.addEventListener("unhandledrejection", e => note("Erro: " + ((e.reason && e.reason.message) || "desconhecido")));
 
@@ -407,7 +414,8 @@ $("gCreate").onclick = async () => {
 };
 
 $("gJoin").onclick = async () => {
-  const code = $("gCode").value.trim().toLowerCase();
+  let code = $("gCode").value.trim().toLowerCase();
+  const m = code.match(/convite=([a-z0-9]+)/); if (m) code = m[1]; // aceita o link inteiro também
   if (!code) { note("Digite o código do convite."); return; }
   const { data, error } = await sb.rpc("join_group", { code });
   if (error) { note("Código inválido. Confira com quem te convidou."); return; }
@@ -469,7 +477,7 @@ $("invQrShare").onclick = async () => {
 
 $("invite").onclick = () => {
   const box = $("invBox"); box.hidden = !box.hidden;
-  $("invLink").textContent = inviteUrl();
+  $("invLink").textContent = inviteUrl(); $("invCode").textContent = group.invite_code;
   $("invNew").hidden = group.owner_id !== me.id;
   $("invNewRow").hidden = group.owner_id !== me.id;
   if (!box.hidden) renderInviteQR();
@@ -481,11 +489,17 @@ $("invShare").onclick = async () => {
     await navigator.clipboard.writeText(url); note("Link copiado! Cole numa conversa.", true);
   } catch (e) { note("Copie o link manualmente: " + url); }
 };
+// só o código, para quem já tem conta colar em "Entrar com um código"
+$("invCopy").onclick = async () => {
+  const c = group.invite_code;
+  try { await navigator.clipboard.writeText(c); note("Código copiado! Quem já tem conta cola em Trocar de grupo → Entrar com um código.", true); }
+  catch (e) { note("Seu código: " + c, true); }
+};
 $("invNew").onclick = async () => {
   if (!(await askDialog({ title: "Gerar um novo código?", text: "O link e o QR code de convite antigos deixam de funcionar. Quem já entrou continua no grupo.", okText: "Gerar novo código" }))) return;
   const { data, error } = await sb.rpc("regenerate_invite", { gid: group.id });
   if (error) { note("Não consegui gerar o código: " + error.message); return; }
-  group.invite_code = data; $("invLink").textContent = inviteUrl(); renderInviteQR(); note("Novo link gerado: o QR code também mudou.", true);
+  group.invite_code = data; $("invLink").textContent = inviteUrl(); $("invCode").textContent = data; renderInviteQR(); note("Novo link gerado: o QR code também mudou.", true);
 };
 
 function openGroup(g) {
@@ -1302,12 +1316,16 @@ function b64uToBytes(s) {
   return Uint8Array.from(b, c => c.charCodeAt(0));
 }
 
+const BLOCKED_MSG = "As notificações estão bloqueadas para este app. iPhone: Ajustes → Notificações → Desafio da Água → Permitir. Android: toque no cadeado ao lado do endereço (ou segure o ícone do app → Informações) → Notificações → Permitir.";
 async function enablePush() {
   if (!vapidReady()) throw new Error("Falta preencher a VAPID_PUBLIC_KEY no config.js.");
   if (isIOS && !isStandalone) throw new Error("No iPhone, instale o app na Tela de Início e abra pelo ícone para ativar os lembretes.");
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw new Error("Este navegador não aceita notificações.");
+  // o pedido de permissão precisa ser a 1ª espera depois do toque, senão o iPhone não mostra a janela
+  if (Notification.permission === "denied") throw new Error(BLOCKED_MSG);
   const perm = await Notification.requestPermission();
-  if (perm !== "granted") throw new Error("Você não permitiu as notificações.");
+  if (perm === "denied") throw new Error(BLOCKED_MSG);
+  if (perm !== "granted") throw new Error("Você não permitiu as notificações. Toque de novo e escolha Permitir.");
   const reg = await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription();
   if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(VAPID_PUBLIC_KEY.trim()) });
@@ -1370,6 +1388,7 @@ $("saveReminder").onclick = async () => {
 
 $("testPush").onclick = async () => {
   try {
+    await enablePush(); // pede a permissão (se ainda não tiver) e cadastra este aparelho
     note("A notificação chega em uns 5 segundos. Saia do app (volte para a Tela de Início) para ver o aviso.", true);
     const r = await callNotify("test-push");
     note("Enviada para " + r.sent + (r.sent === 1 ? " aparelho." : " aparelhos.") + " Se não apareceu, confira as permissões do app nos Ajustes.", true);
