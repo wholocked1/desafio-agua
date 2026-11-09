@@ -120,7 +120,21 @@ let bottles = (() => {
   return [{ name: "Garrafinha", ml: parseInt(lsGet("agua-bottle"), 10) || 500 }];
 })();
 
-$("date").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+const showDate = () => { $("date").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }); };
+showDate();
+
+// Virada do dia: o celular costuma "congelar" o app aberto em segundo plano. Ao voltar para ele (ou à meia-noite
+// com ele aberto), o app passa para o dia de hoje e recarrega o placar, a semana e o mês.
+function syncDay() {
+  const d = today();
+  if (d === day) return false;
+  day = d; showDate(); winnerKey = ""; histKey = "";
+  if (me && group && !$("app").hidden) { logs = []; hist = []; render(); load(); }
+  return true;
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") syncDay(); });
+window.addEventListener("focus", syncDay);
+setInterval(syncDay, 60000);
 
 // convite pelo link (?convite=CODIGO): guarda até a pessoa entrar/criar conta
 const inviteParam = (new URLSearchParams(location.search).get("convite") || "").trim().toLowerCase();
@@ -1636,6 +1650,7 @@ function logErrMsg(m) {
 
 async function addLog(ml, blob) {
   if (!me || !group || !(ml > 0)) return;
+  syncDay(); // registro sempre no dia de hoje, mesmo se o app ficou aberto desde ontem
   const item = { user_id: me.id, group_id: group.id, ml, day, blob: blob || null, photo_path: null, created: Date.now() };
   if (!navigator.onLine) return enqueue(item);
   const r = await sendLog(item);

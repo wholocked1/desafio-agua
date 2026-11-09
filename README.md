@@ -74,10 +74,10 @@ O app abre em tela cheia com o ícone da gota, pede permissão da câmera na pri
 Envie os arquivos novos para o GitHub. O app se atualiza sozinho nos celulares: ao ser aberto (ou ao voltar para ele), confere a versão publicada e, se mudou, recarrega e mostra "App atualizado ✅". Ele espera se houver uma janela aberta, um envio em andamento ou se estiver sem internet. Não precisa desinstalar.
 
 **A regra para isso funcionar:** toda vez que mudar o `app.js` ou o `app.css`, aumente o número da versão nos três lugares, sempre o mesmo número:
-- `index.html`: `app.css?v=14` e `app.js?v=14` → `?v=15`;
-- `sw.js`: `CACHE = "agua-v14"` → `"agua-v15"` e, na lista `SHELL`, `app.css?v=14` e `app.js?v=14` → `?v=15`.
+- `index.html`: `app.css?v=15` e `app.js?v=15` → `?v=16`;
+- `sw.js`: `CACHE = "agua-v15"` → `"agua-v16"` e, na lista `SHELL`, `app.css?v=15` e `app.js?v=15` → `?v=16`.
 
-Versão atual: **14**.
+Versão atual: **15**.
 
 ## Grupos e links de convite
 Qualquer pessoa pode criar uma conta. Depois de entrar, ela faz uma de duas coisas:
