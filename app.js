@@ -75,7 +75,14 @@ const note = (t, ok) => {
   if (t && !t.endsWith("…")) noteTimer = setTimeout(() => { if (n.textContent === t) n.textContent = ""; }, ok ? 4000 : 8000);
 };
 $("note").onclick = () => note("");
-window.addEventListener("error", e => note("Erro: " + (e.message || "desconhecido")));
+// "Script error." = erro dentro de um script de outro site (CAPTCHA, biblioteca): o navegador esconde os detalhes
+// e não é algo que a pessoa possa resolver, então não aparece na tela (fica só no console)
+window.addEventListener("error", e => {
+  if (!e.filename || /^script error\.?$/i.test(e.message || "") || !e.filename.startsWith(location.origin)) {
+    console.warn("Erro em script externo:", e.message); return;
+  }
+  note("Erro: " + (e.message || "desconhecido"));
+});
 window.addEventListener("unhandledrejection", e => note("Erro: " + ((e.reason && e.reason.message) || "desconhecido")));
 
 // Link do e-mail de "Esqueci minha senha": o Supabase volta com #...type=recovery (ou ?redefinir=1, que o app pede)
