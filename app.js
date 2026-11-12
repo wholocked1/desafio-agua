@@ -524,7 +524,7 @@ $("invNew").onclick = async () => {
 };
 
 function openGroup(g) {
-  group = g; lsSet("agua-group", g.id); logs = []; members = []; reacts = {}; openLogs = {}; hist = []; histKey = ""; dayGoals = {}; $("membersCard").hidden = true; note("");
+  group = g; lsSet("agua-group", g.id); logs = []; members = []; reacts = {}; comments = {}; openCm.clear(); openLogs = {}; hist = []; histKey = ""; dayGoals = {}; $("membersCard").hidden = true; note("");
   screen("app"); $("invBox").hidden = true;
   $("gTitle").textContent = g.name; $("who").textContent = myName;
   $("goal").value = myGoal; $("winner").hidden = true; winnerKey = "";
@@ -795,7 +795,7 @@ async function load() {
   // os demais (ex.: "Senha alterada!") continuam na tela
   const nt = $("note").textContent;
   if (nt.startsWith("Erro ao carregar") || nt.endsWith("…") || nt === OFFLINE_MSG) note("");
-  logs = data || []; render(); loadMembers(); loadWinner(); loadHistory(); loadReactions();
+  logs = data || []; render(); loadMembers(); loadWinner(); loadHistory(); loadReactions(); loadComments();
   renderQueue(); if (queueCount) flushQueue();
 }
 
@@ -960,7 +960,7 @@ function renderWinners(ppl, totals) {
 
 function render() {
   const ppl = people(), totals = dailyTotals(), start = periodStart(period);
-  renderWinners(ppl, totals);
+  renderWinners(ppl, totals); renderWeekly(ppl, totals);
   const rows = Object.keys(ppl).map(uid => {
     const u = totals[uid] || {}, p = ppl[uid];
     let ml = 0, hit = 0;
@@ -995,6 +995,10 @@ function render() {
   $("goalLine").textContent = (group && group.goal_ml ? "Meta do grupo: " : "Sua meta: ") + gGoal + " ml · " + pct + "%" + (mineMl >= gGoal ? " ✅" : "");
   $("goalBar").style.width = pct + "%";
 
+  renderMembers();
+  // enquanto alguém digita um comentário, as fotos não são redesenhadas (senão o teclado fecha)
+  const typing = document.activeElement && document.activeElement.classList.contains("cm-input");
+  if (typing) return;
   const box = $("proofs"); box.textContent = "";
   const shots = logs.filter(l => l.photo_path).slice(0, 12);
   const need = shots.map(l => l.photo_path).filter(p => !signed[p] || signed[p].exp < Date.now());
@@ -1018,13 +1022,19 @@ function render() {
       bt.onclick = () => toggleReact(l.id, e, mine);
       chips.appendChild(bt);
     });
+    const cms = comments[l.id] || [];
+    const cb = document.createElement("button"); cb.className = "chip" + (openCm.has(l.id) ? " on" : "");
+    cb.textContent = "💬" + (cms.length ? " " + cms.length : ""); cb.title = "Comentários";
+    cb.onclick = () => { if (openCm.has(l.id)) openCm.delete(l.id); else openCm.add(l.id); render(); };
+    chips.appendChild(cb);
     if (l.user_id === me.id || group.owner_id === me.id) {
       const del = document.createElement("button"); del.className = "chip danger"; del.textContent = "🗑️"; del.title = "Remover registro";
       del.onclick = () => removeLog(l); chips.appendChild(del);
     }
-    f.append(im, cap, chips); box.appendChild(f);
+    f.append(im, cap, chips);
+    if (openCm.has(l.id)) { f.classList.add("cm-open"); f.appendChild(commentBox(l, cms)); }
+    box.appendChild(f);
   });
-  renderMembers();
 }
 
 // ---------- Vencedor de ontem, meta e sair do grupo ----------
@@ -1520,6 +1530,120 @@ async function loadReactions() {
   reacts = r; render();
 }
 
+// ---------- Comentários nas fotos ----------
+let comments = {};
+const openCm = new Set(), cmDraft = {};
+async function loadComments() {
+  if (!me || !group) return;
+  const gid = group.id, ids = logs.filter(l => l.photo_path).slice(0, 12).map(l => l.id);
+  if (!ids.length) { comments = {}; return; }
+  const { data, error } = await sb.from("comments").select("id,log_id,user_id,body,created_at,profiles!user_id(name)")
+    .in("log_id", ids).order("created_at", { ascending: true });
+  if (error || !group || group.id !== gid) return; // banco sem a migração de comentários: só não mostra
+  const c = {}; (data || []).forEach(x => (c[x.log_id] || (c[x.log_id] = [])).push(x));
+  comments = c; render();
+}
+
+function commentBox(l, cms) {
+  const box = document.createElement("div"); box.className = "cm-box";
+  if (!cms.length) { const e = document.createElement("p"); e.className = "mut cm-empty"; e.textContent = "Nenhum comentário ainda."; box.appendChild(e); }
+  cms.forEach(c => {
+    const row = document.createElement("div"); row.className = "cm-item";
+    const name = (c.user_id === me.id ? myName : (c.profiles && c.profiles.name)) || "?";
+    const tx = document.createElement("div"); tx.className = "cm-text";
+    const b = document.createElement("b"); b.textContent = name + " ";
+    const t = document.createElement("span"); t.textContent = c.body;
+    tx.append(b, t);
+    row.append(avatarEl(c.user_id, name, 22), tx);
+    if (c.user_id === me.id || group.owner_id === me.id) {
+      const del = document.createElement("button"); del.className = "cm-del"; del.textContent = "🗑️"; del.title = "Apagar comentário";
+      del.onclick = () => deleteComment(c);
+      row.appendChild(del);
+    }
+    box.appendChild(row);
+  });
+  const form = document.createElement("div"); form.className = "cm-form";
+  const inp = document.createElement("input"); inp.className = "cm-input"; inp.maxLength = 300;
+  inp.placeholder = "Escreva um comentário"; inp.value = cmDraft[l.id] || ""; inp.setAttribute("aria-label", "Comentário");
+  inp.oninput = () => { cmDraft[l.id] = inp.value; };
+  inp.onblur = () => setTimeout(() => { if (!document.activeElement || !document.activeElement.classList.contains("cm-input")) render(); }, 200);
+  const send = document.createElement("button"); send.textContent = "Enviar";
+  const go = async () => {
+    const body = inp.value.trim();
+    if (!body) { inp.focus(); return; }
+    send.disabled = true;
+    const { error } = await sb.from("comments").insert({ log_id: l.id, body });
+    send.disabled = false;
+    if (error) {
+      note(/muitos_comentarios/.test(error.message) ? "Calma! Muitos comentários seguidos. Espere um minuto."
+        : /check/.test(error.message) ? "O comentário precisa ter entre 1 e 300 letras."
+        : "Não consegui comentar: " + error.message);
+      return;
+    }
+    cmDraft[l.id] = ""; inp.value = ""; inp.blur();
+    await loadComments();
+  };
+  send.onclick = go;
+  inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); go(); } };
+  form.append(inp, send); box.appendChild(form);
+  return box;
+}
+
+async function deleteComment(c) {
+  if (!(await askDialog({ title: "Apagar comentário?", text: "\"" + c.body.slice(0, 80) + (c.body.length > 80 ? "…" : "") + "\"", okText: "Apagar", danger: true }))) return;
+  const { error } = await sb.from("comments").delete().eq("id", c.id);
+  if (error) { note("Não consegui apagar o comentário."); return; }
+  await loadComments();
+}
+// os comentários dos outros aparecem sozinhos (confere a cada minuto, com o grupo aberto)
+setInterval(() => {
+  if (document.visibilityState === "visible" && group && !$("app").hidden) loadComments();
+}, 60000);
+
+// ---------- Resumo da semana (segunda e terça, no topo do grupo) ----------
+function renderWeekly(ppl, totals) {
+  const box = $("weekly");
+  const wd = (() => { const [y, m, d] = day.split("-").map(Number); return new Date(y, m - 1, d).getDay(); })();
+  const wStart = addDays(periodStart("week"), -7), wEnd = addDays(periodStart("week"), -1);
+  const key = "agua-resumo-" + (group && group.id) + "-" + wStart;
+  if (!group || !histKey || (wd !== 1 && wd !== 2) || lsGet(key)) { box.hidden = true; return; }
+  const sum = (uid, a, z) => Object.keys(totals[uid] || {}).reduce((s, d) => s + (d >= a && d <= z ? totals[uid][d] : 0), 0);
+  const uids = Object.keys(ppl);
+  const all = uids.reduce((s, u) => s + sum(u, wStart, wEnd), 0);
+  if (!all) { box.hidden = true; return; }
+  const mine = {}; uids.forEach(u => { if (totals[u]) mine[u] = totals[u]; }); // só quem ainda está no grupo
+  const champ = winnersOf(wStart, wEnd, ppl, mine);
+  const pStart = addDays(wStart, -7), pEnd = addDays(wStart, -1);
+  let imp = null;
+  uids.forEach(u => {
+    const before = sum(u, pStart, pEnd), now = sum(u, wStart, wEnd), diff = now - before;
+    if (before > 0 && diff > 0 && (!imp || diff > imp.diff)) imp = { uid: u, diff };
+  });
+  let streak = null;
+  uids.forEach(u => {
+    let n = 0, d = wEnd;
+    while (n < 62 && ((totals[u] || {})[d] || 0) >= goalFor(u, d, ppl[u].goal)) { n++; d = addDays(d, -1); }
+    if (n >= 2 && (!streak || n > streak.n)) streak = { uid: u, n };
+  });
+  const br = d => d.slice(8, 10) + "/" + d.slice(5, 7);
+  box.textContent = "";
+  const head = document.createElement("div"); head.className = "weekly-head";
+  const t = document.createElement("strong"); t.textContent = "📊 Resumo da semana (" + br(wStart) + " a " + br(wEnd) + ")";
+  const x = document.createElement("button"); x.className = "weekly-close"; x.textContent = "✕"; x.title = "Fechar resumo"; x.setAttribute("aria-label", "Fechar resumo");
+  x.onclick = () => { lsSet(key, "1"); box.hidden = true; };
+  head.append(t, x); box.appendChild(head);
+  const line = (uid, text) => {
+    const r = document.createElement("div"); r.className = "weekly-line";
+    if (uid) r.appendChild(avatarEl(uid, (ppl[uid] || {}).name || "?", 22));
+    const s2 = document.createElement("span"); s2.textContent = text; r.appendChild(s2); box.appendChild(r);
+  };
+  if (champ) line(champ.uids[0], "🏆 Campeã(o): " + champ.names.join(" e ") + " · " + champ.ml.toLocaleString("pt-BR") + " ml");
+  if (imp) line(imp.uid, "📈 Quem mais melhorou: " + ppl[imp.uid].name + " · +" + imp.diff.toLocaleString("pt-BR") + " ml");
+  if (streak) line(streak.uid, "🔥 Maior sequência: " + ppl[streak.uid].name + " · " + streak.n + " dias seguidos");
+  line(null, "💧 O grupo todo bebeu " + (all / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " litros");
+  box.hidden = false;
+}
+
 async function toggleReact(logId, emoji, mine) {
   const list = reacts[logId] || (reacts[logId] = []);
   if (mine) {
@@ -1604,7 +1728,7 @@ function renderMembers() {
           t.onclick = () => { openLogs[m.user_id] = !openLogs[m.user_id]; renderMembers(); };
           acts.appendChild(t);
         }
-        const rm = document.createElement("button"); rm.className = "chip danger"; rm.textContent = "Remover do grupo";
+        const rm = document.createElement("button"); rm.className = "chip danger"; rm.textContent = "🚫 Remover do grupo";
         rm.onclick = () => removeMember(m); acts.appendChild(rm);
         mid.appendChild(acts);
         if (openLogs[m.user_id]) mine.forEach(l => {

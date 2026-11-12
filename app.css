@@ -281,8 +281,11 @@ button.alt {
   border-color: var(--cor-principal);
 }
 
+/* botões pequenos de apagar/remover: texto e borda vermelhos, fundo transparente */
 .chip.danger {
   color: var(--cor-erro);
+  border-color: var(--cor-erro);
+  background: transparent;
 }
 
 /* ----- Caixa amarela de aviso ----- */
@@ -542,6 +545,89 @@ button.alt {
   font-size: .75rem;
   color: var(--cor-texto-fraco);
   margin-top: 2px;
+}
+
+/* ----- Comentários da foto (💬) ----- */
+/* com os comentários abertos, a foto ocupa a linha inteira */
+.pf.cm-open {
+  grid-column: 1 / -1;
+}
+
+.pf.cm-open img {
+  max-width: 180px;
+}
+
+.cm-box {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-campo);
+}
+
+.cm-empty {
+  margin: 0 0 6px;
+  font-size: .85rem;
+}
+
+.cm-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: .9rem;
+}
+
+.cm-text {
+  flex: 1;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.cm-del {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  background: transparent;
+  font-size: .85rem;
+}
+
+.cm-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.cm-form input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.cm-form button {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+}
+
+/* ----- Resumo da semana (segunda e terça, no topo do grupo) ----- */
+.weekly-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.weekly-close {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--cor-texto-fraco);
+}
+
+.weekly-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: .95rem;
 }
 
 /* ----- Convite: QR code ----- */
@@ -976,8 +1062,8 @@ button.alt {
   font-size: .85rem;
 }
 
-/* botão de ação perigosa (apagar, sair, excluir) */
-button.danger {
+/* botão de confirmar da janela, quando a ação é perigosa (apagar, sair, excluir) */
+#dlgYes.danger {
   background: var(--cor-erro);
 }
 
