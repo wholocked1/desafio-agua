@@ -1,0 +1,26 @@
+# Atualização: painel do administrador, alarme, "Desfazer" no aviso e tour
+
+O que muda:
+- **🛠️ Painel do administrador** (Perfil → Painel do administrador, só para quem você autorizar): situação geral (✅ ou 🔴/🟡 com o motivo), números da plataforma, agendamentos, as últimas chamadas do banco para a função de envio, o registro de envios (com filtro "Só erros"), a configuração (endereço do projeto, segredo do agendamento, administradores) e dois testes: **Testar lembretes agora** e **Testar alarme por e-mail**.
+- **⚠️ Alarme por e-mail**: quando algo para (endereço do projeto errado, agendamento parado ou com falha, a função de envio sem responder), os administradores recebem um e-mail. No máximo 1 a cada 12 horas. A verificação roda de hora em hora e também quando alguém abre o app, então o alarme chega mesmo se o agendamento não consegue chamar a função (o caso de hoje). Quem é administrador também vê "⚠️ Há um problema na plataforma" ao abrir o app.
+- **Desfazer no aviso**: depois de registrar, aparece "+500 ml registrados · Desfazer" no pé da tela por alguns segundos. O botão "Desfazer último" continua no mesmo lugar.
+- **👋 Tour de boas-vindas**: 5 telas rápidas na primeira vez em cada aparelho (dá para pular). Para rever: Perfil → "Ver o tour de boas-vindas".
+
+## Ordem de publicação
+
+### 1. Banco (Supabase → SQL Editor)
+1. Abra uma aba nova, cole todo o `migracao-admin.sql` e clique em **Run**.
+2. Abra o `tornar-admin.sql`, troque o e-mail na linha marcada pelo **e-mail com que você entra no app**, cole no SQL Editor e clique em **Run**. Deve aparecer "Pronto: … agora tem acesso ao Painel do administrador".
+
+### 2. Função de envio
+Supabase → **Edge Functions → notify** → troque o código pelo novo `supabase/functions/notify/index.ts` → **Deploy**. Os Secrets continuam os mesmos. O e-mail de alarme sai pelo mesmo Gmail dos resumos e vai para o e-mail da conta de cada administrador.
+
+### 3. App (GitHub)
+Envie no mesmo commit: `index.html`, `app.js`, `app.css`, `sw.js` e `LEIA-ME.md`. **Não troque o seu `config.js`.** Confira se nenhum nome ganhou "(1)".
+
+## Testar depois de publicar
+1. Abra o app → Perfil → **🛠️ Painel do administrador**. Deve aparecer "✅ Tudo funcionando".
+2. Toque em **Testar alarme por e-mail**: chega um e-mail "🧪 Teste do alarme" com a situação atual.
+3. Toque em **Testar lembretes agora** e veja a primeira linha de "Chamadas do banco": deve ser 200.
+
+Se o painel não aparecer no Perfil, confira se o e-mail do `tornar-admin.sql` é o mesmo da sua conta no app e abra o app de novo.

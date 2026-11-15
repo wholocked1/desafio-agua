@@ -15,6 +15,9 @@
 --    2. Funções auxiliares 6. Regras de acesso (RLS)
 --    3. Gatilhos           7. Armazenamento de fotos
 --    4. Funções do app     8. Tempo real e segredo do agendamento
+--                          9. Comentários nas fotos e aviso de meta batida
+--                          10. Cutucões e troféus
+--                          11. Painel do administrador e alarme
 -- =====================================================================
 
 
@@ -556,6 +559,423 @@ language sql security definer stable set search_path = public as $$
 $$;
 revoke execute on function public.check_cron_secret(text) from public, anon, authenticated;
 grant execute on function public.check_cron_secret(text) to service_role;
+
+
+-- =====================================================================
+-- 9. COMENTÁRIOS NAS FOTOS E AVISO DE META BATIDA
+-- =====================================================================
+
+-- ========== 1) Comentários nas fotos ==========
+create table if not exists public.comments (
+  id bigint generated always as identity primary key,
+  log_id bigint not null references public.logs(id) on delete cascade,
+  user_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  body text not null check (char_length(btrim(body)) between 1 and 300),
+  created_at timestamptz not null default now()
+);
+create index if not exists comments_log_idx on public.comments(log_id);
+
+alter table public.comments enable row level security;
+revoke all on public.comments from anon;
+grant select, insert, delete on public.comments to authenticated;
+
+-- vejo os comentários das fotos dos meus grupos; comento só como eu mesma;
+-- apago os meus (e a dona do grupo apaga qualquer um)
+drop policy if exists "ver comentarios do grupo" on public.comments;
+create policy "ver comentarios do grupo" on public.comments
+  for select to authenticated using (public.log_in_my_group(log_id));
+drop policy if exists "comentar" on public.comments;
+create policy "comentar" on public.comments
+  for insert to authenticated with check (user_id = auth.uid() and public.log_in_my_group(log_id));
+drop policy if exists "apagar comentario" on public.comments;
+create policy "apagar comentario" on public.comments
+  for delete to authenticated using (
+    user_id = auth.uid()
+    or exists (select 1 from public.logs l where l.id = log_id and public.is_owner(l.group_id))
+  );
+
+-- o banco preenche autor e horário (o app não consegue mandar outro) e segura excesso: até 10 por minuto
+create or replace function public.check_comment() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  new.user_id := auth.uid();
+  new.body := btrim(new.body);
+  new.created_at := now();
+  if (select count(*) from public.comments
+       where user_id = new.user_id and created_at > now() - interval '1 minute') >= 10 then
+    raise exception 'muitos_comentarios';
+  end if;
+  return new;
+end $$;
+drop trigger if exists check_comment_before_insert on public.comments;
+create trigger check_comment_before_insert before insert on public.comments
+  for each row execute function public.check_comment();
+
+-- quem sai (ou é removida) de um grupo leva junto os comentários que fez nele
+create or replace function public.cleanup_member_comments() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.comments c using public.logs l
+   where c.log_id = l.id and l.group_id = old.group_id and c.user_id = old.user_id;
+  return null;
+end $$;
+drop trigger if exists cleanup_member_comments_after_delete on public.members;
+create trigger cleanup_member_comments_after_delete after delete on public.members
+  for each row execute function public.cleanup_member_comments();
+
+-- ========== 2) Aviso "Fulana bateu a meta!" ==========
+-- Uma linha por pessoa, grupo e dia: garante no máximo 1 aviso por dia.
+-- Ninguém do app lê esta tabela; só a função de envio.
+create table if not exists public.goal_alerts (
+  id bigint generated always as identity primary key,
+  group_id uuid not null references public.groups(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  day date not null,
+  total int not null,
+  goal int not null,
+  created_at timestamptz not null default now(),
+  sent_at timestamptz,
+  unique (group_id, user_id, day)
+);
+alter table public.goal_alerts enable row level security;
+revoke all on public.goal_alerts from anon, authenticated;
+
+-- Depois de cada registro: se a pessoa acabou de passar da meta (hoje, num grupo com mais gente),
+-- anota o aviso e chama a função de envio. Se o envio não estiver configurado, o registro entra normal.
+create or replace function public.goal_alert() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare total int; g int; aid bigint;
+begin
+  if new.day <> (now() at time zone 'America/Sao_Paulo')::date then return null; end if;
+  g := coalesce(new.goal_ml, (select coalesce(gr.goal_ml, p.goal_ml)
+                                from public.groups gr, public.profiles p
+                               where gr.id = new.group_id and p.id = new.user_id));
+  if g is null then return null; end if;
+  select coalesce(sum(ml), 0) into total from public.logs
+   where user_id = new.user_id and group_id = new.group_id and day = new.day;
+  if total < g or total - new.ml >= g then return null; end if;          -- não foi este registro que bateu
+  if (select count(*) from public.members where group_id = new.group_id) < 2 then return null; end if;
+  insert into public.goal_alerts (group_id, user_id, day, total, goal)
+  values (new.group_id, new.user_id, new.day, total, g)
+  on conflict (group_id, user_id, day) do nothing
+  returning id into aid;
+  if aid is null then return null; end if;                               -- já avisou hoje
+  begin
+    perform net.http_post(
+      url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/notify',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'notify_cron_secret')
+      ),
+      body := jsonb_build_object('type', 'goal', 'alert_id', aid),
+      timeout_milliseconds := 30000
+    );
+  exception when others then
+    null; -- sem pg_net ou sem a URL do projeto (agendar-envios.sql): sem aviso, mas o registro continua
+  end;
+  return null;
+end $$;
+revoke execute on function public.goal_alert() from public, anon, authenticated;
+drop trigger if exists goal_alert_after_insert on public.logs;
+create trigger goal_alert_after_insert after insert on public.logs
+  for each row execute function public.goal_alert();
+
+
+-- =====================================================================
+-- 10. CUTUCÕES E TROFÉUS
+-- =====================================================================
+
+-- ========== 1) Cutucões ==========
+-- Uma linha por cutucão. Cada pessoa cutuca a mesma pessoa no máximo 1 vez por dia em cada grupo.
+create table if not exists public.pokes (
+  id bigint generated always as identity primary key,
+  group_id uuid not null references public.groups(id) on delete cascade,
+  from_user uuid not null references public.profiles(id) on delete cascade,
+  to_user uuid not null references public.profiles(id) on delete cascade,
+  day date not null,
+  created_at timestamptz not null default now(),
+  sent_at timestamptz,
+  unique (group_id, from_user, to_user, day)
+);
+create index if not exists pokes_to_idx on public.pokes(to_user, day);
+
+alter table public.pokes enable row level security;
+revoke all on public.pokes from anon, authenticated;
+grant select on public.pokes to authenticated;
+-- vejo só os cutucões que mandei ou recebi; criar, só pela função poke()
+drop policy if exists "ver meus cutucoes" on public.pokes;
+create policy "ver meus cutucoes" on public.pokes
+  for select to authenticated using (from_user = auth.uid() or to_user = auth.uid());
+
+-- Cutucar alguém do grupo que ainda não registrou água hoje.
+-- Devolve {"notified": true} quando a pessoa vai receber a notificação no celular.
+create or replace function public.poke(gid uuid, target uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); d date := (now() at time zone 'America/Sao_Paulo')::date; pid bigint; will boolean;
+begin
+  if me is null then raise exception 'nao_autenticado'; end if;
+  if target = me then raise exception 'cutucar_a_si'; end if;
+  if not exists (select 1 from public.members where group_id = gid and user_id = me)
+     or not exists (select 1 from public.members where group_id = gid and user_id = target) then
+    raise exception 'nao_e_membro';
+  end if;
+  if exists (select 1 from public.logs where group_id = gid and user_id = target and day = d) then
+    raise exception 'ja_registrou';
+  end if;
+  if (select count(*) from public.pokes where from_user = me and day = d) >= 30 then
+    raise exception 'muitos_cutucoes';
+  end if;
+  insert into public.pokes (group_id, from_user, to_user, day) values (gid, me, target, d)
+  on conflict (group_id, from_user, to_user, day) do nothing
+  returning id into pid;
+  if pid is null then raise exception 'ja_cutucou'; end if;
+  will := exists (select 1 from public.push_subscriptions where user_id = target)
+          and coalesce((select reminder_every from public.profiles where id = target), 0) > 0;
+  if will then
+    begin
+      perform net.http_post(
+        url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/notify',
+        headers := jsonb_build_object(
+          'Content-Type', 'application/json',
+          'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'notify_cron_secret')
+        ),
+        body := jsonb_build_object('type', 'poke', 'poke_id', pid),
+        timeout_milliseconds := 30000
+      );
+    exception when others then
+      will := false; -- envio não configurado: o cutucão fica só dentro do app
+    end;
+  end if;
+  return jsonb_build_object('notified', will);
+end $$;
+revoke execute on function public.poke(uuid, uuid) from public, anon;
+grant execute on function public.poke(uuid, uuid) to authenticated;
+
+-- ========== 2) Troféus ==========
+-- Semanas (segunda a domingo) e meses já encerrados em que eu fui quem mais bebeu num grupo.
+-- Só conta período com pelo menos 2 pessoas registrando; empate dá troféu para todos os empatados.
+create or replace function public.my_trophies()
+returns table (kind text, period_start date, group_id uuid, group_name text, ml int)
+language sql stable security invoker set search_path = public as $$
+  with hoje as (select (now() at time zone 'America/Sao_Paulo')::date as d),
+  base as (
+    select l.group_id, l.user_id, l.day, l.ml from public.logs l
+     where l.group_id in (select m.group_id from public.members m where m.user_id = auth.uid())
+  ),
+  per as (
+    select 'semana'::text as kind, date_trunc('week', b.day)::date as ps, b.group_id, b.user_id, sum(b.ml)::int as ml
+      from base b, hoje where b.day < date_trunc('week', hoje.d)::date group by 1, 2, 3, 4
+    union all
+    select 'mes', date_trunc('month', b.day)::date, b.group_id, b.user_id, sum(b.ml)::int
+      from base b, hoje where b.day < date_trunc('month', hoje.d)::date group by 1, 2, 3, 4
+  ),
+  ranked as (
+    select p.*, rank() over (partition by p.kind, p.ps, p.group_id order by p.ml desc) as pos,
+           count(*) over (partition by p.kind, p.ps, p.group_id) as gente
+      from per p
+  )
+  select r.kind, r.ps, r.group_id, g.name, r.ml
+    from ranked r join public.groups g on g.id = r.group_id
+   where r.user_id = auth.uid() and r.pos = 1 and r.gente >= 2
+   order by r.ps desc, r.kind
+$$;
+revoke execute on function public.my_trophies() from public, anon;
+grant execute on function public.my_trophies() to authenticated;
+
+
+-- =====================================================================
+-- 11. PAINEL DO ADMINISTRADOR E ALARME DE PROBLEMAS
+--     (depois, rode o tornar-admin.sql com o seu e-mail)
+-- =====================================================================
+
+-- ========== 1) Quem é administrador da plataforma ==========
+create table if not exists public.app_admins (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table public.app_admins enable row level security;
+revoke all on public.app_admins from anon, authenticated;
+
+create or replace function public.is_app_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.app_admins where user_id = auth.uid())
+$$;
+revoke execute on function public.is_app_admin() from public, anon;
+grant execute on function public.is_app_admin() to authenticated;
+
+-- Alarmes enviados por e-mail (no máximo 1 a cada 12 horas)
+create table if not exists public.app_alarms (
+  id bigint generated always as identity primary key,
+  created_at timestamptz not null default now(),
+  problems jsonb not null,
+  sent_to text,
+  test boolean not null default false
+);
+alter table public.app_alarms enable row level security;
+revoke all on public.app_alarms from anon, authenticated;
+
+-- ========== 2) Verificação de saúde ==========
+-- Lista o que está errado agora. severity: 'erro' (algo parou) ou 'aviso' (vale olhar).
+create or replace function public.health_problems()
+returns table (code text, severity text, message text, since timestamptz)
+language plpgsql stable security definer set search_path = public as $$
+declare
+  url text; txt text; hora int := extract(hour from (now() at time zone 'America/Sao_Paulo'));
+  st text; msg text; quando timestamptz; n int; ult timestamptz;
+begin
+  -- endereço do projeto (usado pelo agendamento, cutucões e avisos de meta)
+  begin
+    select decrypted_secret into url from vault.decrypted_secrets where name = 'project_url';
+    if url is null then
+      return query select 'url', 'erro', 'O endereço do projeto não está guardado. Rode o corrigir-url-do-projeto.sql.', null::timestamptz;
+    elsif url !~ '^https://[a-z0-9]{10,40}\.supabase\.co$' then
+      return query select 'url', 'erro', 'O endereço do projeto guardado está errado ("' || url || '"). Rode o corrigir-url-do-projeto.sql.', null::timestamptz;
+    end if;
+    if not exists (select 1 from vault.decrypted_secrets where name = 'notify_cron_secret') then
+      return query select 'segredo', 'erro', 'Falta o segredo do agendamento (notify_cron_secret). Rode o setup.sql, parte 8.', null::timestamptz;
+    end if;
+  exception when others then
+    return query select 'url', 'aviso', 'Não consegui ler os segredos do projeto: ' || sqlerrm, null::timestamptz;
+  end;
+
+  -- agendamento dos lembretes
+  begin
+    if not exists (select 1 from cron.job where jobname = 'agua-lembretes') then
+      return query select 'agenda', 'erro', 'Os lembretes não estão agendados. Rode o agendar-envios.sql.', null::timestamptz;
+    else
+      select d.status, d.return_message, d.start_time into st, msg, quando
+        from cron.job_run_details d join cron.job j using (jobid)
+       where j.jobname = 'agua-lembretes' order by d.start_time desc limit 1;
+      if st is not null and st not in ('succeeded', 'running', 'starting') then
+        return query select 'agenda', 'erro', 'A última execução do agendamento falhou: ' || coalesce(left(msg, 200), st), quando;
+      elsif hora between 9 and 22 and (quando is null or quando < now() - interval '3 hours') then
+        return query select 'agenda', 'erro', 'O agendamento dos lembretes não roda há mais de 3 horas.', quando;
+      end if;
+    end if;
+  exception when others then
+    return query select 'agenda', 'aviso', 'Não consegui ler o agendamento: ' || sqlerrm, null::timestamptz;
+  end;
+
+  -- chamadas do banco para a função de envio: as 3 últimas falharam?
+  begin
+    select count(*), min(x.created) into n, ult from (
+      select h.created, h.status_code, h.error_msg from net._http_response h order by h.created desc limit 3
+    ) x where x.status_code is null or x.status_code >= 400;
+    if n = 3 then
+      select coalesce(h.error_msg, 'status ' || h.status_code || ' · ' || left(h.content, 150)) into txt
+        from net._http_response h order by h.created desc limit 1;
+      return query select 'funcao', 'erro', 'O banco não consegue chamar a função de envio: ' || coalesce(txt, 'sem resposta'), ult;
+    end if;
+  exception when others then
+    null; -- sem pg_net: nada a verificar
+  end;
+
+  -- erros de envio (Gmail, notificações) nas últimas 24 horas
+  select count(*), min(l.created_at) into n, ult from public.notify_log l
+   where l.status = 'erro' and l.created_at > now() - interval '24 hours';
+  if n >= 3 then
+    select l.detail into txt from public.notify_log l where l.status = 'erro' order by l.created_at desc limit 1;
+    return query select 'envios', 'aviso', n || ' erros de envio nas últimas 24 horas. O último: ' || left(coalesce(txt, ''), 200), ult;
+  end if;
+end $$;
+revoke execute on function public.health_problems() from public, anon, authenticated;
+grant execute on function public.health_problems() to service_role;
+
+-- Para qualquer pessoa logada: só diz SE há problema sério (sem detalhes).
+-- O app usa isto para pedir o alarme por e-mail quando algo parou.
+create or replace function public.health_ping() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.health_problems() where severity = 'erro')
+$$;
+revoke execute on function public.health_ping() from public, anon;
+grant execute on function public.health_ping() to authenticated;
+
+-- ========== 3) Painel do administrador ==========
+create or replace function public.admin_overview() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  hoje date := (now() at time zone 'America/Sao_Paulo')::date;
+  out jsonb; jobs jsonb := '[]'; calls jsonb := '[]'; url text; secret boolean := false;
+begin
+  if not public.is_app_admin() then raise exception 'sem_permissao'; end if;
+
+  begin
+    select coalesce(jsonb_agg(jsonb_build_object(
+             'name', j.jobname, 'schedule', j.schedule, 'active', j.active,
+             'last_run', d.start_time, 'status', d.status, 'message', left(d.return_message, 200))
+             order by j.jobname), '[]')
+      into jobs
+      from cron.job j
+      left join lateral (select * from cron.job_run_details x where x.jobid = j.jobid order by x.start_time desc limit 1) d on true;
+  exception when others then jobs := '[]';
+  end;
+
+  begin
+    select coalesce(jsonb_agg(c order by c.created desc), '[]') into calls from (
+      select h.created, h.status_code, h.error_msg, left(h.content, 200) as content
+        from net._http_response h order by h.created desc limit 15
+    ) c;
+  exception when others then calls := '[]';
+  end;
+
+  begin
+    select decrypted_secret into url from vault.decrypted_secrets where name = 'project_url';
+    secret := exists (select 1 from vault.decrypted_secrets where name = 'notify_cron_secret');
+  exception when others then url := null;
+  end;
+
+  select jsonb_build_object(
+    'checked_at', now(),
+    'problems', coalesce((select jsonb_agg(to_jsonb(p)) from public.health_problems() p), '[]'),
+    'numbers', jsonb_build_object(
+      'accounts', (select count(*) from public.profiles),
+      'groups', (select count(*) from public.groups),
+      'active_today', (select count(distinct user_id) from public.logs where day = hoje),
+      'logs_today', (select count(*) from public.logs where day = hoje),
+      'logs_7d', (select count(*) from public.logs where day > hoje - 7),
+      'reminders_on', (select count(*) from public.profiles where reminder_every > 0),
+      'devices', (select count(*) from public.push_subscriptions),
+      'emails_on', (select count(*) from public.profiles where email_freq <> 'none')
+    ),
+    'jobs', jobs,
+    'calls', calls,
+    'log', coalesce((select jsonb_agg(x order by x.created_at desc) from (
+        select l.created_at, l.kind, l.status, left(l.detail, 300) as detail, p.name
+          from public.notify_log l left join public.profiles p on p.id = l.user_id
+         order by l.created_at desc limit 60) x), '[]'),
+    'config', jsonb_build_object(
+      'project_url', url,
+      'url_ok', coalesce(url ~ '^https://[a-z0-9]{10,40}\.supabase\.co$', false),
+      'cron_secret', secret,
+      'admins', (select jsonb_agg(p.name) from public.app_admins a join public.profiles p on p.id = a.user_id)
+    ),
+    'last_alarm', (select jsonb_build_object('at', a.created_at, 'to', a.sent_to, 'test', a.test)
+                     from public.app_alarms a order by a.created_at desc limit 1)
+  ) into out;
+  return out;
+end $$;
+revoke execute on function public.admin_overview() from public, anon;
+grant execute on function public.admin_overview() to authenticated;
+
+-- Botão "Testar lembretes agora": chama a função de envio pelo mesmo caminho do agendamento.
+create or replace function public.admin_run_reminder() returns bigint
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_app_admin() then raise exception 'sem_permissao'; end if;
+  return public.call_notify('reminder');
+end $$;
+revoke execute on function public.admin_run_reminder() from public, anon;
+grant execute on function public.admin_run_reminder() to authenticated;
+
+-- ========== 4) Alarme de hora em hora ==========
+-- Confere a saúde e manda o e-mail de alarme (só funciona quando a função de envio está alcançável;
+-- se não estiver, o próprio app de quem abrir pede o alarme pelo caminho direto).
+do $$
+begin
+  perform cron.schedule('agua-saude', '30 * * * *', $c$ select public.call_notify('health') $c$);
+exception when others then
+  raise notice 'Agendamento do alarme não criado (%). Rode o agendar-envios.sql antes e depois rode este arquivo de novo.', sqlerrm;
+end $$;
 
 
 -- =====================================================================

@@ -64,9 +64,11 @@
   color-scheme: light dark;
 }
 
-/* ----- Tema escuro (quando o celular está no modo escuro) ----- */
+/* ----- Tema escuro -----
+   Segue o celular ("Automático"), a não ser que a pessoa escolha Claro ou Escuro no Perfil.
+   As cores escuras aparecem duas vezes (automático e escolhido): ao mudar uma, mude a outra igual. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --cor-fundo: #0c1822;
     --cor-cartao: #142636;
     --cor-texto: #e6f1f8;
@@ -75,6 +77,21 @@
     --cor-principal-clara: #2a6f9c;
     --cor-borda: #244057;
   }
+}
+
+:root[data-theme="dark"] {
+  --cor-fundo: #0c1822;
+  --cor-cartao: #142636;
+  --cor-texto: #e6f1f8;
+  --cor-texto-fraco: #93aab9;
+  --cor-principal: #4aaef0;
+  --cor-principal-clara: #2a6f9c;
+  --cor-borda: #244057;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 
@@ -258,6 +275,16 @@ button.alt {
   border-color: var(--cor-principal);
 }
 
+/* abas menores, embaixo das abas Hoje/Semana/Mês (Litros / % da meta) */
+.tabs.tabs-sm {
+  margin-top: 6px;
+}
+
+.tabs.tabs-sm button {
+  padding: 5px 6px;
+  font-size: .85rem;
+}
+
 /* ----- Botões pequenos e redondos (reações, remover) ----- */
 .chips {
   display: flex;
@@ -281,8 +308,11 @@ button.alt {
   border-color: var(--cor-principal);
 }
 
+/* botões pequenos de apagar/remover: texto e borda vermelhos, fundo transparente */
 .chip.danger {
   color: var(--cor-erro);
+  border-color: var(--cor-erro);
+  background: transparent;
 }
 
 /* ----- Caixa amarela de aviso ----- */
@@ -542,6 +572,180 @@ button.alt {
   font-size: .75rem;
   color: var(--cor-texto-fraco);
   margin-top: 2px;
+}
+
+/* ----- Cutucões e painel da dona ----- */
+/* "💧 Ana te cutucou!" no cartão de quanto você bebeu */
+.poke-line {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: var(--raio-campo);
+  background: var(--cor-principal-clara);
+  font-size: .9rem;
+  text-align: center;
+}
+
+/* resumo no topo da lista de membros (só a dona vê) */
+.owner-panel {
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-campo);
+  font-size: .9rem;
+}
+
+.owner-panel .chips {
+  margin-top: 6px;
+}
+
+/* "Parado há 5 dias" */
+.idle {
+  color: var(--cor-erro);
+}
+
+/* ----- Botão dentro do aviso flutuante ("500 ml registrados · Desfazer") ----- */
+#note .note-act {
+  margin-left: 10px;
+  padding: 3px 10px;
+  border-radius: var(--raio-botao);
+  font-size: .85rem;
+  vertical-align: middle;
+}
+
+/* ----- Tour de boas-vindas ----- */
+.tour-box {
+  text-align: center;
+}
+
+.tour-emoji {
+  font-size: 2.6rem;
+  line-height: 1.2;
+}
+
+.tour-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.tour-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cor-borda);
+}
+
+.tour-dots i.on {
+  background: var(--cor-principal);
+}
+
+/* ----- Painel do administrador ----- */
+.adm-item {
+  padding: 7px 0;
+  border-top: 1px solid var(--cor-borda);
+  font-size: .9rem;
+  overflow-wrap: anywhere;
+}
+
+.adm-item:first-child {
+  border-top: 0;
+}
+
+.adm-item .mut {
+  font-size: .8rem;
+}
+
+.adm-ok {
+  color: var(--cor-principal);
+  font-weight: 600;
+}
+
+.adm-bad {
+  color: var(--cor-erro);
+}
+
+/* ----- Comentários da foto (💬) ----- */
+/* com os comentários abertos, a foto ocupa a linha inteira */
+.pf.cm-open {
+  grid-column: 1 / -1;
+}
+
+.pf.cm-open img {
+  max-width: 180px;
+}
+
+.cm-box {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-campo);
+}
+
+.cm-empty {
+  margin: 0 0 6px;
+  font-size: .85rem;
+}
+
+.cm-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: .9rem;
+}
+
+.cm-text {
+  flex: 1;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.cm-del {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  background: transparent;
+  font-size: .85rem;
+}
+
+.cm-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.cm-form input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.cm-form button {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+}
+
+/* ----- Resumo da semana (segunda e terça, no topo do grupo) ----- */
+.weekly-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.weekly-close {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--cor-texto-fraco);
+}
+
+.weekly-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: .95rem;
 }
 
 /* ----- Convite: QR code ----- */
@@ -976,8 +1180,8 @@ button.alt {
   font-size: .85rem;
 }
 
-/* botão de ação perigosa (apagar, sair, excluir) */
-button.danger {
+/* botão de confirmar da janela, quando a ação é perigosa (apagar, sair, excluir) */
+#dlgYes.danger {
   background: var(--cor-erro);
 }
 

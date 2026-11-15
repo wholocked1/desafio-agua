@@ -74,10 +74,10 @@ O app abre em tela cheia com o ícone da gota, pede permissão da câmera na pri
 Envie os arquivos novos para o GitHub. O app se atualiza sozinho nos celulares: ao ser aberto (ou ao voltar para ele), confere a versão publicada e, se mudou, recarrega e mostra "App atualizado ✅". Ele espera se houver uma janela aberta, um envio em andamento ou se estiver sem internet. Não precisa desinstalar.
 
 **A regra para isso funcionar:** toda vez que mudar o `app.js` ou o `app.css`, aumente o número da versão nos três lugares, sempre o mesmo número:
-- `index.html`: `app.css?v=15` e `app.js?v=15` → `?v=16`;
-- `sw.js`: `CACHE = "agua-v15"` → `"agua-v16"` e, na lista `SHELL`, `app.css?v=15` e `app.js?v=15` → `?v=16`.
+- `index.html`: `app.css?v=19` e `app.js?v=19` → `?v=20`;
+- `sw.js`: `CACHE = "agua-v19"` → `"agua-v20"` e, na lista `SHELL`, `app.css?v=19` e `app.js?v=19` → `?v=20`.
 
-Versão atual: **15**.
+Versão atual: **19**.
 
 ## Grupos e links de convite
 Qualquer pessoa pode criar uma conta. Depois de entrar, ela faz uma de duas coisas:
@@ -94,6 +94,8 @@ Detalhes:
 - O limite de segurança de **6000 ml por dia vale em cada grupo** separadamente.
 - **📅 Histórico do grupo** mostra um calendário do mês; tocando num dia aparecem o vencedor, o placar e as fotos daquele dia.
 - A meta de cada dia fica guardada nos registros: trocar a meta depois não muda a sequência 🔥 nem as conquistas antigas.
+- **💬 Comentários** nas fotos de prova; **💧 aviso** para o grupo quando alguém bate a meta (para quem tem lembretes ligados); **📊 resumo da semana** no topo do grupo na segunda e na terça.
+- Placar por **mais água** ou **% da meta**; **💧 cutucar** quem não registrou; **👑 painel da dona** em "Ver membros"; **🏆 troféus**, gráfico de 14 dias/mês/12 meses, **📥 planilha** dos registros e **tema** claro/escuro no Perfil; **atalhos** +200/+500 ml segurando o ícone (Android).
 
 ## Sem internet
 - O app abre sem internet mostrando o último placar salvo no aparelho (precisa ter sido aberto com internet pelo menos uma vez depois da atualização).
@@ -106,6 +108,10 @@ Todo o banco está num arquivo só, o `setup.sql`, organizado em partes (tabelas
 - **Projeto novo:** rode o `setup.sql` e depois o `agendar-envios.sql` (trocando a URL na linha marcada).
 - **Projeto que já existe:** não precisa rodar nada. Se rodar por engano, não tem problema: ele não apaga dados e só recria as funções e regras na versão atual.
 - **Atualização de novembro:** quem já tem o banco rode uma vez o `migracao-novidades.sql` (veja o `PASSO-A-PASSO-NOVIDADES.md`). O `setup.sql` já inclui essa mudança.
+- **Comentários e aviso de meta:** quem já tem o banco rode uma vez o `migracao-social.sql` (veja o `PASSO-A-PASSO-SOCIAL.md`). O `setup.sql` já inclui essa mudança.
+- **Cutucões e troféus:** depois dele, rode uma vez o `migracao-extras.sql` (veja o `PASSO-A-PASSO-EXTRAS.md`). O `setup.sql` já inclui essa mudança.
+- **Painel do administrador e alarme:** rode uma vez o `migracao-admin.sql` e depois o `tornar-admin.sql` com o seu e-mail (veja o `PASSO-A-PASSO-ADMIN.md`). O `setup.sql` já inclui a primeira parte; o `tornar-admin.sql` é sempre necessário.
+- **Problemas com lembretes:** o Painel do administrador mostra a causa. Sem acesso ao app, rode o `diagnostico-lembretes.sql`. Endereço do projeto errado: `corrigir-url-do-projeto.sql`.
 - As migrações antigas (`seguranca.sql` e as `migracao-*.sql` anteriores) foram incorporadas ao `setup.sql` e podem ser apagadas do repositório.
 
 ## Segurança

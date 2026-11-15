@@ -69,12 +69,19 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 const lsDel = k => { try { localStorage.removeItem(k); } catch (e) {} };
 // aviso flutuante: some sozinho (confirmações em 4 s, erros em 8 s) ou ao tocar; "Enviando…" fica até terminar
 let noteTimer = null;
-const note = (t, ok) => {
+// act (opcional): { label, run } vira um botão dentro do aviso, como "Desfazer"
+const note = (t, ok, act) => {
   const n = $("note"); n.textContent = t || ""; n.className = ok ? "ok" : "";
+  if (t && act) {
+    const b = document.createElement("button"); b.className = "note-act"; b.textContent = act.label;
+    b.onclick = e => { e.stopPropagation(); note(""); act.run(); };
+    n.appendChild(b);
+  }
+  const shown = n.textContent;
   clearTimeout(noteTimer);
-  if (t && !t.endsWith("…")) noteTimer = setTimeout(() => { if (n.textContent === t) n.textContent = ""; }, ok ? 4000 : 8000);
+  if (t && !t.endsWith("…")) noteTimer = setTimeout(() => { if (n.textContent === shown) n.textContent = ""; }, act ? 7000 : ok ? 4000 : 8000);
 };
-$("note").onclick = () => note("");
+$("note").onclick = e => { if (e.target === $("note")) note(""); };
 // "Script error." = erro dentro de um script de outro site (CAPTCHA, biblioteca): o navegador esconde os detalhes
 // e não é algo que a pessoa possa resolver, então não aparece na tela (fica só no console)
 window.addEventListener("error", e => {
@@ -109,6 +116,7 @@ const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d
 
 let day = today(), me = null, myName = "", myGoal = GOAL, myEmailFreq = "none", myReminder = 0, myHours = [], winnerKey = "", logs = [], pending = 500, started = null, signup = false, channel = null;
 let myGroups = [], group = null, members = [], reacts = {}, openLogs = {}, hist = [], period = "day", histKey = "";
+let metric = "ml", pokes = []; // placar por "mais água" ou "% da meta"; cutucões de hoje no grupo
 function cleanBottles(list) {
   if (!Array.isArray(list)) return null;
   const out = list.map(b => ({ name: String((b && b.name) || "").trim().slice(0, 20), ml: parseInt(b && b.ml, 10) }))
@@ -142,9 +150,9 @@ if (inviteParam) lsSet("agua-invite", inviteParam);
 
 let lastScreen = "groups";
 function screen(name) {
-  ["auth", "reset", "groups", "app", "history", "profile", "install"].forEach(s => $(s).hidden = s !== name);
-  if (name !== "profile" && name !== "install") lastScreen = name;
-  $("profileBtn").hidden = name === "auth" || name === "reset" || name === "profile" || name === "install";
+  ["auth", "reset", "groups", "app", "history", "profile", "install", "admin"].forEach(s => $(s).hidden = s !== name);
+  if (name !== "profile" && name !== "install" && name !== "admin") lastScreen = name;
+  $("profileBtn").hidden = name === "auth" || name === "reset" || name === "profile" || name === "install" || name === "admin";
   updateInstallBtn(name);
   window.scrollTo(0, 0);
 }
@@ -309,7 +317,7 @@ async function forgetThisDevice() {
 function clearCaches() {
   try { Object.keys(localStorage).filter(k => k.startsWith("agua-cache-")).forEach(lsDel); } catch (e) {}
 }
-const logout = async () => { $("logout").disabled = true; await forgetThisDevice(); clearCaches(); await sb.auth.signOut(); $("logout").disabled = false; };
+const logout = async () => { $("logout").disabled = true; await forgetThisDevice(); clearCaches(); isAdmin = false; await sb.auth.signOut(); $("logout").disabled = false; };
 $("logout").onclick = logout;
 
 // aviso de link vencido ou já usado, mostrado uma vez, na primeira vez que a tela de login abrir
@@ -387,6 +395,9 @@ async function afterLogin() {
   if (noteAfterLogin) { note(noteAfterLogin, true); noteAfterLogin = ""; }
   maybeShowInstallOnce();
   flushQueue();
+  checkAdmin();
+  setTimeout(maybeShowTour, 1200);
+  setTimeout(checkPlatform, 8000);
 }
 
 async function usePendingInvite() {
@@ -524,7 +535,7 @@ $("invNew").onclick = async () => {
 };
 
 function openGroup(g) {
-  group = g; lsSet("agua-group", g.id); logs = []; members = []; reacts = {}; openLogs = {}; hist = []; histKey = ""; dayGoals = {}; $("membersCard").hidden = true; note("");
+  group = g; lsSet("agua-group", g.id); logs = []; members = []; reacts = {}; comments = {}; openCm.clear(); pokes = []; openLogs = {}; hist = []; histKey = ""; dayGoals = {}; $("membersCard").hidden = true; note("");
   screen("app"); $("invBox").hidden = true;
   $("gTitle").textContent = g.name; $("who").textContent = myName;
   $("goal").value = myGoal; $("winner").hidden = true; winnerKey = "";
@@ -795,8 +806,9 @@ async function load() {
   // os demais (ex.: "Senha alterada!") continuam na tela
   const nt = $("note").textContent;
   if (nt.startsWith("Erro ao carregar") || nt.endsWith("…") || nt === OFFLINE_MSG) note("");
-  logs = data || []; render(); loadMembers(); loadWinner(); loadHistory(); loadReactions();
+  logs = data || []; render(); loadMembers(); loadWinner(); loadHistory(); loadReactions(); loadComments(); loadPokes();
   renderQueue(); if (queueCount) flushQueue();
+  runShortcut();
 }
 
 const signed = {};
@@ -909,6 +921,22 @@ async function loadHistory() {
   render();
 }
 
+// placar: "Mais água" (ml) ou "% da meta" (justo para quem tem metas diferentes); lembrado neste aparelho
+metric = lsGet("agua-metric") === "pct" ? "pct" : "ml";
+document.querySelectorAll("#metricTabs button").forEach(btn => {
+  btn.classList.toggle("on", btn.dataset.m === metric);
+  btn.onclick = () => {
+    metric = btn.dataset.m; lsSet("agua-metric", metric);
+    document.querySelectorAll("#metricTabs button").forEach(x => x.classList.toggle("on", x === btn));
+    render();
+  };
+});
+// dia em que a pessoa entrou no grupo (para o % não contar dias de antes de ela entrar)
+function joinDay(uid) {
+  const m = members.find(x => x.user_id === uid);
+  return m && m.joined_at ? iso(new Date(m.joined_at)) : null;
+}
+
 document.querySelectorAll("#tabs button").forEach(btn => btn.onclick = () => {
   period = btn.dataset.p;
   document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x === btn));
@@ -960,13 +988,18 @@ function renderWinners(ppl, totals) {
 
 function render() {
   const ppl = people(), totals = dailyTotals(), start = periodStart(period);
-  renderWinners(ppl, totals);
+  renderWinners(ppl, totals); renderWeekly(ppl, totals);
   const rows = Object.keys(ppl).map(uid => {
     const u = totals[uid] || {}, p = ppl[uid];
     let ml = 0, hit = 0;
     Object.keys(u).forEach(d => { if (d >= start && d <= day) { ml += u[d]; if (u[d] >= goalFor(uid, d, p.goal)) hit++; } });
-    return { uid, name: p.name, goal: p.goal, ml, hit, streak: streakOf(uid, totals, p.goal) };
-  }).filter(r => r.ml > 0).sort((a, b) => b.ml - a.ml || b.streak - a.streak);
+    // % da meta: tudo o que bebeu no período ÷ a soma das metas de cada dia (desde que entrou no grupo)
+    const jd = joinDay(uid), from = period === "day" ? day : (jd && jd > start ? jd : start);
+    let goals = 0; for (let d = from; d <= day; d = addDays(d, 1)) goals += goalFor(uid, d, p.goal);
+    const pct = goals ? Math.round(ml / goals * 100) : 0;
+    return { uid, name: p.name, goal: p.goal, ml, hit, pct, streak: streakOf(uid, totals, p.goal) };
+  }).filter(r => r.ml > 0).sort((a, b) => metric === "pct" ? (b.pct - a.pct || b.ml - a.ml) : (b.ml - a.ml || b.streak - a.streak));
+  $("metricHint").hidden = metric !== "pct" || period === "day";
   const b = $("board"); b.textContent = "";
   if (!rows.length) {
     const p = document.createElement("p"); p.className = "mut";
@@ -982,10 +1015,13 @@ function render() {
     const a = document.createElement("span");
     a.textContent = r.name + (period === "day" && r.ml >= r.goal ? " ✅" : "") + (r.streak >= 2 ? " 🔥" + r.streak : "");
     const c = document.createElement("span"); c.className = "mut";
-    c.textContent = period === "day" ? r.ml + " / " + r.goal + " ml" : r.ml.toLocaleString("pt-BR") + " ml · ✅ " + r.hit + (r.hit === 1 ? " dia" : " dias");
+    c.textContent = metric === "pct"
+      ? r.pct + "% da meta · " + r.ml.toLocaleString("pt-BR") + " ml"
+      : period === "day" ? r.ml + " / " + r.goal + " ml" : r.ml.toLocaleString("pt-BR") + " ml · ✅ " + r.hit + (r.hit === 1 ? " dia" : " dias");
     nm.append(a, c);
     const bar = document.createElement("div"); bar.className = "bar";
-    const fill = document.createElement("i"); fill.style.width = Math.min(100, Math.round(r.ml / max * 100)) + "%";
+    const fill = document.createElement("i");
+    fill.style.width = (metric === "pct" ? Math.min(100, r.pct) : Math.min(100, Math.round(r.ml / max * 100))) + "%";
     bar.appendChild(fill); mid.append(nm, bar); w.append(pos, avatarEl(r.uid, r.name, 30), mid); b.appendChild(w);
   });
   const mineMl = logs.filter(l => l.user_id === me.id).reduce((s, l) => s + l.ml, 0);
@@ -994,7 +1030,12 @@ function render() {
   $("mine").textContent = mineMl + " ml";
   $("goalLine").textContent = (group && group.goal_ml ? "Meta do grupo: " : "Sua meta: ") + gGoal + " ml · " + pct + "%" + (mineMl >= gGoal ? " ✅" : "");
   $("goalBar").style.width = pct + "%";
+  renderPokeLine(mineMl);
 
+  renderMembers();
+  // enquanto alguém digita um comentário, as fotos não são redesenhadas (senão o teclado fecha)
+  const typing = document.activeElement && document.activeElement.classList.contains("cm-input");
+  if (typing) return;
   const box = $("proofs"); box.textContent = "";
   const shots = logs.filter(l => l.photo_path).slice(0, 12);
   const need = shots.map(l => l.photo_path).filter(p => !signed[p] || signed[p].exp < Date.now());
@@ -1018,13 +1059,19 @@ function render() {
       bt.onclick = () => toggleReact(l.id, e, mine);
       chips.appendChild(bt);
     });
+    const cms = comments[l.id] || [];
+    const cb = document.createElement("button"); cb.className = "chip" + (openCm.has(l.id) ? " on" : "");
+    cb.textContent = "💬" + (cms.length ? " " + cms.length : ""); cb.title = "Comentários";
+    cb.onclick = () => { if (openCm.has(l.id)) openCm.delete(l.id); else openCm.add(l.id); render(); };
+    chips.appendChild(cb);
     if (l.user_id === me.id || group.owner_id === me.id) {
       const del = document.createElement("button"); del.className = "chip danger"; del.textContent = "🗑️"; del.title = "Remover registro";
       del.onclick = () => removeLog(l); chips.appendChild(del);
     }
-    f.append(im, cap, chips); box.appendChild(f);
+    f.append(im, cap, chips);
+    if (openCm.has(l.id)) { f.classList.add("cm-open"); f.appendChild(commentBox(l, cms)); }
+    box.appendChild(f);
   });
-  renderMembers();
 }
 
 // ---------- Vencedor de ontem, meta e sair do grupo ----------
@@ -1104,6 +1151,7 @@ $("delAcc").onclick = deleteAccount;
 // ---------- Perfil ----------
 function showProfile() {
   screen("profile"); note("");
+  $("adminRow").hidden = !isAdmin;
   loadProfileStats();
   $("pEmail").textContent = me.email;
   $("pName").value = myName;
@@ -1128,14 +1176,68 @@ function showProfile() {
 $("profileBtn").onclick = showProfile;
 
 // ---------- Histórico e conquistas ----------
+let profileRows = [], chartRange = "14";
+
+// gráfico do Perfil: 14 dias, este mês (um dia por barra) ou 12 meses (média por dia de cada mês)
+function drawChart(ml, gOf, hitOn, goal) {
+  const chart = $("hChart"), days = $("hDays");
+  chart.textContent = ""; days.textContent = "";
+  const dayLabel = d => d.slice(8, 10) + "/" + d.slice(5, 7);
+  let bars = [];
+  if (chartRange === "year") {
+    const [y, m] = day.split("-").map(Number);
+    for (let k = 11; k >= 0; k--) {
+      const first = new Date(y, m - 1 - k, 1), last = new Date(y, m - k, 0);
+      const a = iso(first), z = k === 0 ? day : iso(last);
+      let sum = 0, n = 0, hits = 0;
+      for (let d = a; d <= z; d = addDays(d, 1)) { sum += ml(d); n++; if (hitOn(d)) hits++; }
+      const avg = n ? Math.round(sum / n) : 0, name = first.toLocaleDateString("pt-BR", { month: "long" });
+      bars.push({ v: avg, met: avg >= goal && avg > 0, label: name.slice(0, 3),
+        info: name + (k === 0 ? " (até hoje)" : "") + ": média de " + avg.toLocaleString("pt-BR") + " ml/dia · " +
+          (sum / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " L no total · meta batida em " + hits + (hits === 1 ? " dia" : " dias") });
+    }
+  } else {
+    const list = [];
+    if (chartRange === "month") { for (let d = day.slice(0, 8) + "01"; d <= day; d = addDays(d, 1)) list.push(d); }
+    else for (let i = 13; i >= 0; i--) list.push(addDays(day, -i));
+    const every = list.length > 16 ? 5 : 2;
+    bars = list.map((d, i) => {
+      const v = ml(d), met = hitOn(d);
+      return { v, met, label: (list.length - 1 - i) % every === 0 ? dayLabel(d).slice(0, 2) : "",
+        info: dayLabel(d) + (d === day ? " (hoje)" : "") + ": " + v.toLocaleString("pt-BR") + " ml" + (met ? " · meta de " + gOf(d) + " ml batida ✅" : " · meta de " + gOf(d) + " ml") };
+    });
+  }
+  const top = Math.max(goal, ...bars.map(b => b.v)) * 1.1;
+  const gl = document.createElement("div"); gl.className = "goal"; gl.style.bottom = (goal / top * 100) + "%"; chart.appendChild(gl);
+  bars.forEach(b => {
+    const col = document.createElement("button");
+    col.className = "col" + (b.met ? "" : " low"); col.setAttribute("aria-label", b.info);
+    const bar = document.createElement("i"); bar.style.height = (b.v ? Math.max(2, b.v / top * 100) : 0) + "%";
+    col.appendChild(bar);
+    const show = () => { chart.querySelectorAll(".col").forEach(c => c.classList.remove("sel")); col.classList.add("sel"); $("hInfo").textContent = b.info; };
+    col.onclick = show; col.onmouseenter = show;
+    chart.appendChild(col);
+    const lb = document.createElement("span"); lb.textContent = b.label; days.appendChild(lb);
+  });
+  $("hInfo").textContent = chartRange === "year" ? "Toque numa barra para ver o mês. Linha tracejada = sua meta por dia." : "Toque numa barra para ver o dia. Linha tracejada = sua meta.";
+}
+document.querySelectorAll("#rangeTabs button").forEach(btn => btn.onclick = () => {
+  chartRange = btn.dataset.r;
+  document.querySelectorAll("#rangeTabs button").forEach(x => x.classList.toggle("on", x === btn));
+  renderProfileStats(profileRows);
+});
+
 async function loadProfileStats() {
   $("hStats").textContent = ""; $("hChart").textContent = ""; $("hDays").textContent = ""; $("badges").textContent = "";
+  loadTrophies();
   const { data, error } = await sb.rpc("my_daily_totals");
   if (error) { $("hInfo").textContent = "Histórico indisponível: rode o migracao-perfil.sql no Supabase."; return; }
-  renderProfileStats(data || []);
+  profileRows = data || [];
+  renderProfileStats(profileRows);
 }
 
 function renderProfileStats(rows) {
+  $("hStats").textContent = ""; $("badges").textContent = "";
   const t = {}; rows.forEach(r => { t[r.day] = r; });
   const goal = myGoal, ml = d => (t[d] ? t[d].ml : 0);
   // hoje vale a meta atual; nos dias passados, a meta pessoal guardada naquele dia
@@ -1170,26 +1272,7 @@ function renderProfileStats(rows) {
     el.append(b, sp); $("hStats").appendChild(el);
   });
 
-  // gráfico dos últimos 14 dias (uma série; barras mais claras = abaixo da meta)
-  const last = []; for (let i = 13; i >= 0; i--) last.push(addDays(day, -i));
-  const top = Math.max(goal, ...last.map(ml)) * 1.1;
-  const chart = $("hChart");
-  const gl = document.createElement("div"); gl.className = "goal"; gl.style.bottom = (goal / top * 100) + "%"; chart.appendChild(gl);
-  last.forEach((d, i) => {
-    const v = ml(d), col = document.createElement("button");
-    const met = hitOn(d);
-    col.className = "col" + (met ? "" : " low");
-    col.setAttribute("aria-label", dayLabel(d) + ": " + v + " ml" + (met ? ", meta batida" : ""));
-    const bar = document.createElement("i"); bar.style.height = (v ? Math.max(2, v / top * 100) : 0) + "%";
-    col.appendChild(bar);
-    const show = () => {
-      chart.querySelectorAll(".col").forEach(c => c.classList.remove("sel")); col.classList.add("sel");
-      $("hInfo").textContent = dayLabel(d) + (d === day ? " (hoje)" : "") + ": " + v.toLocaleString("pt-BR") + " ml" + (met ? " · meta de " + gOf(d) + " ml batida ✅" : " · meta de " + gOf(d) + " ml");
-    };
-    col.onclick = show; col.onmouseenter = show;
-    chart.appendChild(col);
-    const lb = document.createElement("span"); lb.textContent = (i % 2 === 1) ? dayLabel(d).slice(0, 2) : ""; $("hDays").appendChild(lb);
-  });
+  drawChart(ml, gOf, hitOn, goal);
 
   // conquistas
   const badges = [
@@ -1520,6 +1603,435 @@ async function loadReactions() {
   reacts = r; render();
 }
 
+// ---------- Saúde da plataforma e Painel do administrador ----------
+let isAdmin = false, admData = null, admFilter = "all";
+// Depois de entrar: se o banco disser que algo parou, pede o alarme por e-mail (a função manda no máximo
+// 1 a cada 12 horas para os administradores). Quem é administrador também vê um aviso na tela.
+async function checkAdmin() {
+  const a = await sb.rpc("is_app_admin");
+  isAdmin = !a.error && a.data === true; // banco sem o painel: ninguém é administrador
+  if (!$("profile").hidden) $("adminRow").hidden = !isAdmin;
+}
+async function checkPlatform() {
+  if (!me || !sb) return;
+  const { data: bad, error } = await sb.rpc("health_ping");
+  if (error || !bad) return;
+  callNotify("health").catch(() => {});
+  if (isAdmin && $("dlg").hidden && $("tour").hidden && !$("note").textContent)
+    note("⚠️ Há um problema na plataforma.", false, { label: "Ver", run: showAdmin });
+}
+
+const brDT = s => s ? new Date(s).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+function admRow(main, sub, bad) {
+  const d = document.createElement("div"); d.className = "adm-item";
+  const m = document.createElement("div"); m.textContent = main; if (bad) m.className = "adm-bad";
+  d.appendChild(m);
+  if (sub) { const x = document.createElement("div"); x.className = "mut"; x.textContent = sub; d.appendChild(x); }
+  return d;
+}
+async function showAdmin() {
+  if (!isAdmin) return;
+  screen("admin"); note("Carregando o painel…", true);
+  const { data, error } = await sb.rpc("admin_overview");
+  if (error) { note(/sem_permissao/.test(error.message) ? "Sua conta não é administradora." : "Não consegui carregar o painel: " + error.message); return; }
+  note(""); admData = data; renderAdmin();
+}
+function renderAdmin() {
+  const d = admData || {};
+  $("aChecked").textContent = "Verificado em " + brDT(d.checked_at);
+  // situação
+  const st = $("aStatus"); st.textContent = "";
+  const probs = d.problems || [];
+  if (!probs.length) { const ok = document.createElement("p"); ok.className = "adm-ok"; ok.textContent = "✅ Tudo funcionando."; st.appendChild(ok); }
+  probs.forEach(p => st.appendChild(admRow((p.severity === "erro" ? "🔴 " : "🟡 ") + p.message, p.since ? "desde " + brDT(p.since) : "", p.severity === "erro")));
+  if (d.last_alarm) st.appendChild(admRow("Último e-mail de alarme" + (d.last_alarm.test ? " (teste)" : "") + ": " + brDT(d.last_alarm.at), "para " + (d.last_alarm.to || "—")));
+  // números
+  const nb = $("aNumbers"); nb.textContent = "";
+  const n = d.numbers || {};
+  [["Contas", n.accounts], ["Grupos", n.groups], ["Registraram hoje", n.active_today], ["Registros hoje", n.logs_today],
+   ["Registros em 7 dias", n.logs_7d], ["Com lembrete ligado", n.reminders_on], ["Aparelhos com notificação", n.devices], ["Recebem resumo por e-mail", n.emails_on]]
+    .forEach(([l, v]) => {
+      const c = document.createElement("div"); c.className = "stat";
+      const b = document.createElement("b"); b.textContent = v == null ? "—" : Number(v).toLocaleString("pt-BR");
+      const s2 = document.createElement("span"); s2.textContent = l;
+      c.append(b, s2); nb.appendChild(c);
+    });
+  // agendamentos
+  const jb = $("aJobs"); jb.textContent = "";
+  if (!(d.jobs || []).length) jb.appendChild(admRow("Nenhum agendamento encontrado. Rode o agendar-envios.sql.", "", true));
+  (d.jobs || []).forEach(j => jb.appendChild(admRow(
+    j.name + (j.active ? "" : " (desligado)") + " · " + j.schedule,
+    "última vez: " + brDT(j.last_run) + (j.status ? " · " + (j.status === "succeeded" ? "ok" : j.status) : "") + (j.status && j.status !== "succeeded" && j.message ? " · " + j.message : ""),
+    (j.status && j.status !== "succeeded") || !j.active)));
+  // chamadas
+  const cl = $("aCalls"); cl.textContent = "";
+  if (!(d.calls || []).length) cl.appendChild(admRow("Nenhuma chamada registrada nas últimas horas.", ""));
+  (d.calls || []).forEach(c => {
+    const ok = c.status_code >= 200 && c.status_code < 300;
+    cl.appendChild(admRow(brDT(c.created) + " · " + (c.status_code ? c.status_code : "sem resposta"), c.error_msg || c.content || "", !ok));
+  });
+  renderAdminLog();
+  // configuração
+  const cf = $("aConfig"); cf.textContent = "";
+  const c = d.config || {};
+  cf.appendChild(admRow((c.url_ok ? "✅ " : "🔴 ") + "Endereço do projeto: " + (c.project_url || "não guardado"),
+    c.url_ok ? "" : "Precisa ser o SUPABASE_URL do config.js (https://xxxx.supabase.co). Corrija com o corrigir-url-do-projeto.sql.", !c.url_ok));
+  cf.appendChild(admRow((c.cron_secret ? "✅ " : "🔴 ") + "Segredo do agendamento " + (c.cron_secret ? "guardado" : "faltando"), "", !c.cron_secret));
+  cf.appendChild(admRow("Administradores: " + ((c.admins || []).join(", ") || "—"), "Para incluir alguém, rode o tornar-admin.sql com o e-mail da pessoa."));
+}
+function renderAdminLog() {
+  const lg = $("aLog"); lg.textContent = "";
+  const rows = ((admData && admData.log) || []).filter(x => admFilter === "all" || x.status === "erro");
+  if (!rows.length) lg.appendChild(admRow(admFilter === "erro" ? "Nenhum erro registrado. 🎉" : "Nada registrado ainda.", ""));
+  rows.forEach(x => lg.appendChild(admRow(brDT(x.created_at) + " · " + x.kind + " · " + x.status + (x.name ? " · " + x.name : ""), x.detail || "", x.status === "erro")));
+}
+document.querySelectorAll("#aLogTabs button").forEach(b => b.onclick = () => {
+  admFilter = b.dataset.f;
+  document.querySelectorAll("#aLogTabs button").forEach(x => x.classList.toggle("on", x === b));
+  renderAdminLog();
+});
+$("adminBtn").onclick = showAdmin;
+$("aRefresh").onclick = showAdmin;
+$("aBack").onclick = () => showProfile();
+$("aRunReminder").onclick = async () => {
+  $("aRunReminder").disabled = true; note("Chamando a função pelo agendamento…", true);
+  const { error } = await sb.rpc("admin_run_reminder");
+  if (error) { note("Não consegui: " + error.message); $("aRunReminder").disabled = false; return; }
+  setTimeout(async () => { $("aRunReminder").disabled = false; await showAdmin(); note("Teste feito: veja a primeira linha de \"Chamadas do banco\".", true); }, 5000);
+};
+$("aTestAlarm").onclick = async () => {
+  $("aTestAlarm").disabled = true; note("Enviando o e-mail de teste…", true);
+  try {
+    const r = await callNotify("alarm-test");
+    note(r && r.sent ? "E-mail de teste enviado para os administradores. 📧" : "Não consegui enviar: " + ((r && r.error) || "motivo desconhecido"), !!(r && r.sent));
+  } catch (e) { note("Não consegui enviar: " + e.message); }
+  $("aTestAlarm").disabled = false;
+};
+
+// ---------- Tour de boas-vindas (primeira vez em cada aparelho; dá para rever no Perfil) ----------
+const TOUR = [
+  ["💧", "Bem-vindo ao Desafio da Água!", "Aqui você e seus amigos competem para ver quem bebe mais água. Cada um tem a sua meta do dia."],
+  ["➕", "Registre cada copo", "Toque em +200, +300 ou +500 ml. Ou cadastre suas garrafinhas no Perfil e use os botões 📸, que registram com foto."],
+  ["📸", "A prova", "A foto é da garrafinha vazia, de cabeça para baixo. Alguns grupos exigem foto em todo registro; a dona do grupo decide."],
+  ["🏆", "Compita", "Veja o placar do dia, da semana e do mês, por ml ou por % da meta. Mantenha a sequência 🔥, reaja às fotos e cutuque quem esqueceu."],
+  ["🔔", "Não esqueça", "No Perfil, ligue os lembretes: o app avisa enquanto você estiver abaixo da meta. Instalado na tela inicial, ele funciona até sem internet."]
+];
+let tourStep = 0;
+function maybeShowTour() {
+  if (!me || lsGet("agua-tour-visto") || !$("install").hidden || !$("dlg").hidden || ($("app").hidden && $("groups").hidden)) return;
+  showTour();
+}
+function showTour() { tourStep = 0; renderTour(); $("tour").hidden = false; $("tourNext").focus(); }
+function renderTour() {
+  const [e, t, x] = TOUR[tourStep];
+  $("tourEmoji").textContent = e; $("tourTitle").textContent = t; $("tourText").textContent = x;
+  $("tourDots").innerHTML = TOUR.map((_, i) => '<i class="' + (i === tourStep ? "on" : "") + '"></i>').join("");
+  $("tourNext").textContent = tourStep === TOUR.length - 1 ? "Começar" : "Próximo";
+  $("tourSkip").hidden = tourStep === TOUR.length - 1;
+}
+function endTour() { $("tour").hidden = true; lsSet("agua-tour-visto", "1"); }
+$("tourNext").onclick = () => { if (tourStep < TOUR.length - 1) { tourStep++; renderTour(); } else endTour(); };
+$("tourSkip").onclick = endTour;
+$("tour").addEventListener("keydown", e => { if (e.key === "Escape") endTour(); });
+$("pTour").onclick = showTour;
+
+// ---------- Cutucões ----------
+const POKE_ERR = {
+  ja_cutucou: "Você já cutucou essa pessoa hoje.",
+  ja_registrou: "Essa pessoa já registrou água hoje 🎉",
+  muitos_cutucoes: "Limite de cutucões de hoje atingido.",
+  cutucar_a_si: "Não dá para cutucar a si mesma 😄",
+  nao_e_membro: "Essa pessoa não está mais no grupo."
+};
+async function loadPokes() {
+  if (!me || !group) return;
+  const gid = group.id, d = day;
+  const { data, error } = await sb.from("pokes").select("from_user,to_user").eq("group_id", gid).eq("day", d);
+  if (error || !group || group.id !== gid) return; // banco sem a migração de cutucões: só não mostra
+  pokes = data || []; render();
+}
+async function pokeUser(uid) {
+  const { data, error } = await sb.rpc("poke", { gid: group.id, target: uid });
+  if (error) {
+    const k = Object.keys(POKE_ERR).find(x => (error.message || "").includes(x));
+    if (k === "ja_cutucou") pokes.push({ from_user: me.id, to_user: uid });
+    return { error: k ? POKE_ERR[k] : "Não consegui cutucar: " + error.message };
+  }
+  pokes.push({ from_user: me.id, to_user: uid });
+  return { notified: !!(data && data.notified) };
+}
+function nameOfUid(uid) {
+  const m = members.find(x => x.user_id === uid);
+  return (m && m.profiles && m.profiles.name) || (people()[uid] || {}).name || "Alguém";
+}
+// "💧 Ana te cutucou!" enquanto você não registrar nada hoje
+function renderPokeLine(mineMl) {
+  const el = $("pokeLine");
+  const from = [...new Set(pokes.filter(k => k.to_user === me.id).map(k => k.from_user))];
+  el.hidden = !from.length || mineMl > 0;
+  if (el.hidden) return;
+  const names = from.map(nameOfUid);
+  el.textContent = "💧 " + (names.length === 1 ? names[0] + " te cutucou" : names.slice(0, -1).join(", ") + " e " + names[names.length - 1] + " te cutucaram") + "! Bora registrar a primeira água do dia?";
+}
+
+// ---------- Painel da dona (no topo de "Ver membros") ----------
+// dias desde o último registro: 0 = hoje; null = nada nos últimos 2 meses;
+// "new" = entrou há menos de 3 dias e ainda não registrou (não conta como parado)
+const daysBetween = (a, b) => { const [y1, m1, d1] = a.split("-").map(Number), [y2, m2, d2] = b.split("-").map(Number); return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 864e5); };
+function idleDays(uid, mlToday, totals, m) {
+  if (mlToday[uid] > 0) return 0;
+  const ds = Object.keys(totals[uid] || {}).filter(d => d < day && totals[uid][d] > 0).sort();
+  if (ds.length) return daysBetween(ds[ds.length - 1], day);
+  const jd = m && m.joined_at ? iso(new Date(m.joined_at)) : null;
+  return jd && daysBetween(jd, day) < 3 ? "new" : null;
+}
+const isIdle = n => n === null || (typeof n === "number" && n >= 3);
+function idleText(n) {
+  return n === "new" ? "entrou agora, ainda não registrou" : n === null ? "sem registros nos últimos 2 meses"
+    : n === 0 ? "registrou hoje" : n === 1 ? "último registro: ontem" : "parado há " + n + " dias";
+}
+function renderOwnerPanel(owner, mlToday, totals) {
+  const box = $("ownerPanel");
+  box.hidden = !owner || members.length < 2;
+  if (box.hidden) return;
+  box.textContent = "";
+  const others = members.filter(m => m.user_id !== me.id);
+  const nToday = members.filter(m => mlToday[m.user_id] > 0).length;
+  const idle = others.filter(m => isIdle(idleDays(m.user_id, mlToday, totals, m))).length;
+  const t = document.createElement("div");
+  t.textContent = "👑 Painel da dona · registraram hoje: " + nToday + " de " + members.length + " · parados há 3 dias ou mais: " + idle;
+  box.appendChild(t);
+  const todo = others.filter(m => !(mlToday[m.user_id] > 0) && !pokes.some(k => k.from_user === me.id && k.to_user === m.user_id));
+  if (!todo.length) return;
+  const chips = document.createElement("div"); chips.className = "chips";
+  const all = document.createElement("button"); all.className = "chip";
+  all.textContent = "💧 Cutucar quem não registrou hoje (" + todo.length + ")";
+  all.onclick = async () => {
+    all.disabled = true; note("Cutucando…", true);
+    let ok = 0, phone = 0;
+    for (const m of todo) { const r = await pokeUser(m.user_id); if (!r.error) { ok++; if (r.notified) phone++; } }
+    note(ok ? "Cutucão enviado para " + ok + (ok === 1 ? " pessoa" : " pessoas") + (phone < ok ? " (" + phone + " recebe" + (phone === 1 ? "" : "m") + " no celular; as outras veem ao abrir o app)" : "") + ". 💧"
+      : "Ninguém para cutucar agora.", true);
+    renderMembers();
+  };
+  chips.appendChild(all); box.appendChild(chips);
+}
+
+// ---------- Troféus no Perfil ----------
+async function loadTrophies() {
+  const box = $("trophies"); box.textContent = ""; $("tCount").textContent = "";
+  const { data, error } = await sb.rpc("my_trophies");
+  if (error) { box.innerHTML = ""; const p = document.createElement("p"); p.className = "mut"; p.textContent = "Troféus indisponíveis por enquanto."; box.appendChild(p); return; }
+  const list = data || [], wk = list.filter(x => x.kind === "semana").length, mo = list.filter(x => x.kind === "mes").length;
+  $("tCount").textContent = list.length ? "(🏆 " + wk + " · 👑 " + mo + ")" : "";
+  if (!list.length) {
+    const p = document.createElement("p"); p.className = "mut"; p.style.marginBottom = "0";
+    p.textContent = "Nenhum troféu ainda. Seja quem mais bebe numa semana (com pelo menos 2 pessoas registrando) para ganhar o primeiro!";
+    box.appendChild(p); return;
+  }
+  const br = d => d.slice(8, 10) + "/" + d.slice(5, 7);
+  list.slice(0, 8).forEach(x => {
+    const r = document.createElement("div"); r.className = "nm"; r.style.marginTop = "8px";
+    const a = document.createElement("span");
+    const [y, m] = x.period_start.split("-").map(Number);
+    a.textContent = x.kind === "mes"
+      ? "👑 " + new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" }) + " · " + x.group_name
+      : "🏆 Semana de " + br(x.period_start) + " · " + x.group_name;
+    const b = document.createElement("span"); b.className = "mut"; b.textContent = Number(x.ml).toLocaleString("pt-BR") + " ml";
+    r.append(a, b); box.appendChild(r);
+  });
+  if (list.length > 8) { const p = document.createElement("p"); p.className = "mut"; p.style.margin = "6px 0 0"; p.textContent = "e mais " + (list.length - 8) + "."; box.appendChild(p); }
+}
+
+// ---------- Exportar meus registros (planilha .csv que abre no Excel e no Google Planilhas) ----------
+$("exportCsv").onclick = async () => {
+  const btn = $("exportCsv"); btn.disabled = true; note("Preparando a planilha…", true);
+  try {
+    const rows = []; let from = 0;
+    for (;;) { // de 1000 em 1000
+      const { data, error } = await sb.from("logs").select("day,ml,created_at,photo_path,groups(name)")
+        .eq("user_id", me.id).order("created_at", { ascending: true }).range(from, from + 999);
+      if (error) throw error;
+      rows.push(...(data || []));
+      if (!data || data.length < 1000) break;
+      from += 1000;
+    }
+    if (!rows.length) { note("Você ainda não tem registros para baixar."); return; }
+    const q = v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+    const lines = [["Dia", "Hora", "Grupo", "ml", "Com foto"].join(";")];
+    rows.forEach(r => {
+      const [y, m, d] = r.day.split("-");
+      lines.push([d + "/" + m + "/" + y, new Date(r.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+        q(r.groups && r.groups.name), r.ml, r.photo_path ? "sim" : "não"].join(";"));
+    });
+    const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }); // ﻿: acentos certos no Excel
+    const name = "desafio-agua-" + day + ".csv";
+    const file = typeof File === "function" ? new File([blob], name, { type: "text/csv" }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] }) && matchMedia("(display-mode: standalone)").matches) {
+      await navigator.share({ files: [file], title: "Meus registros de água" }).catch(() => {});
+    } else {
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    }
+    note(rows.length + " registros na planilha. 📥", true);
+  } catch (e) { note("Não consegui gerar a planilha: " + (e.message || e)); }
+  finally { btn.disabled = false; }
+};
+
+// ---------- Tema claro/escuro (escolhido neste aparelho) ----------
+function applyTheme(t) {
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  document.querySelectorAll("#themeTabs button").forEach(b => b.classList.toggle("on", b.dataset.t === (t || "auto")));
+  const dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+  const mt = document.querySelector('meta[name="theme-color"]'); if (mt) mt.content = dark ? "#0c1822" : "#1d8fe0";
+}
+applyTheme(lsGet("agua-tema"));
+document.querySelectorAll("#themeTabs button").forEach(b => b.onclick = () => {
+  const t = b.dataset.t; if (t === "auto") lsDel("agua-tema"); else lsSet("agua-tema", t); applyTheme(t);
+});
+
+// ---------- Atalhos do ícone (segurar o ícone do app: +200 ml, +500 ml, com foto) ----------
+// Só valem quando o app foi aberto pelo ícone instalado, para um link qualquer não registrar água por você.
+const shortcut = (() => {
+  const q = new URLSearchParams(location.search), add = Number(q.get("somar")), foto = q.get("foto");
+  if (!q.has("somar") && !foto) return null;
+  q.delete("somar"); q.delete("foto");
+  history.replaceState(null, "", location.pathname + (q.toString() ? "?" + q : "")); // não repete ao recarregar
+  if (!matchMedia("(display-mode: standalone)").matches) return null;
+  if ([200, 300, 500].includes(add)) return { add };
+  return foto ? { foto: true } : null;
+})();
+function runShortcut() {
+  if (!shortcut || shortcut.done || !group || $("app").hidden) return;
+  shortcut.done = true;
+  if (shortcut.add) {
+    if (group.require_photo) { note("Neste grupo todo registro precisa de foto. Use um dos botões 📸."); return; }
+    note("Registrando " + shortcut.add + " ml…", true);
+    addLog(shortcut.add).then(() => {
+      const t = $("note").textContent;
+      if (!t || t.startsWith("+")) note("+" + shortcut.add + " ml registrados pelo atalho ✅", true, { label: "Desfazer", run: undoLast });
+    });
+  } else {
+    note("Toque numa garrafinha 📸 para registrar com foto.", true);
+    const b = document.querySelector("#btBox button"); if (b) b.scrollIntoView({ block: "center" });
+  }
+}
+
+// ---------- Comentários nas fotos ----------
+let comments = {};
+const openCm = new Set(), cmDraft = {};
+async function loadComments() {
+  if (!me || !group) return;
+  const gid = group.id, ids = logs.filter(l => l.photo_path).slice(0, 12).map(l => l.id);
+  if (!ids.length) { comments = {}; return; }
+  const { data, error } = await sb.from("comments").select("id,log_id,user_id,body,created_at,profiles!user_id(name)")
+    .in("log_id", ids).order("created_at", { ascending: true });
+  if (error || !group || group.id !== gid) return; // banco sem a migração de comentários: só não mostra
+  const c = {}; (data || []).forEach(x => (c[x.log_id] || (c[x.log_id] = [])).push(x));
+  comments = c; render();
+}
+
+function commentBox(l, cms) {
+  const box = document.createElement("div"); box.className = "cm-box";
+  if (!cms.length) { const e = document.createElement("p"); e.className = "mut cm-empty"; e.textContent = "Nenhum comentário ainda."; box.appendChild(e); }
+  cms.forEach(c => {
+    const row = document.createElement("div"); row.className = "cm-item";
+    const name = (c.user_id === me.id ? myName : (c.profiles && c.profiles.name)) || "?";
+    const tx = document.createElement("div"); tx.className = "cm-text";
+    const b = document.createElement("b"); b.textContent = name + " ";
+    const t = document.createElement("span"); t.textContent = c.body;
+    tx.append(b, t);
+    row.append(avatarEl(c.user_id, name, 22), tx);
+    if (c.user_id === me.id || group.owner_id === me.id) {
+      const del = document.createElement("button"); del.className = "cm-del"; del.textContent = "🗑️"; del.title = "Apagar comentário";
+      del.onclick = () => deleteComment(c);
+      row.appendChild(del);
+    }
+    box.appendChild(row);
+  });
+  const form = document.createElement("div"); form.className = "cm-form";
+  const inp = document.createElement("input"); inp.className = "cm-input"; inp.maxLength = 300;
+  inp.placeholder = "Escreva um comentário"; inp.value = cmDraft[l.id] || ""; inp.setAttribute("aria-label", "Comentário");
+  inp.oninput = () => { cmDraft[l.id] = inp.value; };
+  inp.onblur = () => setTimeout(() => { if (!document.activeElement || !document.activeElement.classList.contains("cm-input")) render(); }, 200);
+  const send = document.createElement("button"); send.textContent = "Enviar";
+  const go = async () => {
+    const body = inp.value.trim();
+    if (!body) { inp.focus(); return; }
+    send.disabled = true;
+    const { error } = await sb.from("comments").insert({ log_id: l.id, body });
+    send.disabled = false;
+    if (error) {
+      note(/muitos_comentarios/.test(error.message) ? "Calma! Muitos comentários seguidos. Espere um minuto."
+        : /check/.test(error.message) ? "O comentário precisa ter entre 1 e 300 letras."
+        : "Não consegui comentar: " + error.message);
+      return;
+    }
+    cmDraft[l.id] = ""; inp.value = ""; inp.blur();
+    await loadComments();
+  };
+  send.onclick = go;
+  inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); go(); } };
+  form.append(inp, send); box.appendChild(form);
+  return box;
+}
+
+async function deleteComment(c) {
+  if (!(await askDialog({ title: "Apagar comentário?", text: "\"" + c.body.slice(0, 80) + (c.body.length > 80 ? "…" : "") + "\"", okText: "Apagar", danger: true }))) return;
+  const { error } = await sb.from("comments").delete().eq("id", c.id);
+  if (error) { note("Não consegui apagar o comentário."); return; }
+  await loadComments();
+}
+// os comentários dos outros aparecem sozinhos (confere a cada minuto, com o grupo aberto)
+setInterval(() => {
+  if (document.visibilityState === "visible" && group && !$("app").hidden) loadComments();
+}, 60000);
+
+// ---------- Resumo da semana (segunda e terça, no topo do grupo) ----------
+function renderWeekly(ppl, totals) {
+  const box = $("weekly");
+  const wd = (() => { const [y, m, d] = day.split("-").map(Number); return new Date(y, m - 1, d).getDay(); })();
+  const wStart = addDays(periodStart("week"), -7), wEnd = addDays(periodStart("week"), -1);
+  const key = "agua-resumo-" + (group && group.id) + "-" + wStart;
+  if (!group || !histKey || (wd !== 1 && wd !== 2) || lsGet(key)) { box.hidden = true; return; }
+  const sum = (uid, a, z) => Object.keys(totals[uid] || {}).reduce((s, d) => s + (d >= a && d <= z ? totals[uid][d] : 0), 0);
+  const uids = Object.keys(ppl);
+  const all = uids.reduce((s, u) => s + sum(u, wStart, wEnd), 0);
+  if (!all) { box.hidden = true; return; }
+  const mine = {}; uids.forEach(u => { if (totals[u]) mine[u] = totals[u]; }); // só quem ainda está no grupo
+  const champ = winnersOf(wStart, wEnd, ppl, mine);
+  const pStart = addDays(wStart, -7), pEnd = addDays(wStart, -1);
+  let imp = null;
+  uids.forEach(u => {
+    const before = sum(u, pStart, pEnd), now = sum(u, wStart, wEnd), diff = now - before;
+    if (before > 0 && diff > 0 && (!imp || diff > imp.diff)) imp = { uid: u, diff };
+  });
+  let streak = null;
+  uids.forEach(u => {
+    let n = 0, d = wEnd;
+    while (n < 62 && ((totals[u] || {})[d] || 0) >= goalFor(u, d, ppl[u].goal)) { n++; d = addDays(d, -1); }
+    if (n >= 2 && (!streak || n > streak.n)) streak = { uid: u, n };
+  });
+  const br = d => d.slice(8, 10) + "/" + d.slice(5, 7);
+  box.textContent = "";
+  const head = document.createElement("div"); head.className = "weekly-head";
+  const t = document.createElement("strong"); t.textContent = "📊 Resumo da semana (" + br(wStart) + " a " + br(wEnd) + ")";
+  const x = document.createElement("button"); x.className = "weekly-close"; x.textContent = "✕"; x.title = "Fechar resumo"; x.setAttribute("aria-label", "Fechar resumo");
+  x.onclick = () => { lsSet(key, "1"); box.hidden = true; };
+  head.append(t, x); box.appendChild(head);
+  const line = (uid, text) => {
+    const r = document.createElement("div"); r.className = "weekly-line";
+    if (uid) r.appendChild(avatarEl(uid, (ppl[uid] || {}).name || "?", 22));
+    const s2 = document.createElement("span"); s2.textContent = text; r.appendChild(s2); box.appendChild(r);
+  };
+  if (champ) line(champ.uids[0], "🏆 Campeã(o): " + champ.names.join(" e ") + " · " + champ.ml.toLocaleString("pt-BR") + " ml");
+  if (imp) line(imp.uid, "📈 Quem mais melhorou: " + ppl[imp.uid].name + " · +" + imp.diff.toLocaleString("pt-BR") + " ml");
+  if (streak) line(streak.uid, "🔥 Maior sequência: " + ppl[streak.uid].name + " · " + streak.n + " dias seguidos");
+  line(null, "💧 O grupo todo bebeu " + (all / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " litros");
+  box.hidden = false;
+}
+
 async function toggleReact(logId, emoji, mine) {
   const list = reacts[logId] || (reacts[logId] = []);
   if (mine) {
@@ -1576,9 +2088,11 @@ function renderMembers() {
   $("membersBtn").textContent = open ? "Esconder membros" : "Ver membros" + (members.length ? " (" + members.length + ")" : "");
   $("mCount").textContent = members.length ? "(" + members.length + ")" : "";
   const box = $("mList"); box.textContent = "";
-  if (!open) return;
+  if (!open) { $("ownerPanel").hidden = true; return; }
   const ml = {}, totals = dailyTotals(), ppl = people();
   logs.forEach(l => { ml[l.user_id] = (ml[l.user_id] || 0) + l.ml; });
+  const owner = group.owner_id === me.id;
+  renderOwnerPanel(owner, ml, totals);
   const nameOf = m => (m.profiles && m.profiles.name) || "Sem nome";
   members.slice()
     .sort((a, b) => (ml[b.user_id] || 0) - (ml[a.user_id] || 0) || nameOf(a).localeCompare(nameOf(b), "pt-BR"))
@@ -1594,19 +2108,38 @@ function renderMembers() {
       nm.append(a, c);
       const sub = document.createElement("div"); sub.className = "mut";
       sub.textContent = "No grupo desde " + new Date(m.joined_at).toLocaleDateString("pt-BR");
+      if (owner && m.user_id !== me.id) { // painel da dona: quando foi o último registro
+        const idle = idleDays(m.user_id, ml, totals, m), last = document.createElement("span");
+        last.textContent = " · " + idleText(idle);
+        if (isIdle(idle)) last.className = "idle";
+        sub.appendChild(last);
+      }
       mid.append(nm, sub);
-      if (group.owner_id === me.id && m.user_id !== me.id) {
+      const acts = document.createElement("div"); acts.className = "chips"; // cutucar e ações da dona numa linha só
+      if (m.user_id !== me.id && !(ml[m.user_id] > 0)) { // ainda não registrou hoje: dá para cutucar
+        const done = pokes.some(k => k.from_user === me.id && k.to_user === m.user_id);
+        const pk = document.createElement("button"); pk.className = "chip" + (done ? " on" : "");
+        pk.textContent = done ? "✓ Cutucado" : "💧 Cutucar"; pk.disabled = done;
+        pk.onclick = async () => {
+          pk.disabled = true;
+          const r = await pokeUser(m.user_id);
+          note(r.error ? r.error : r.notified ? "Cutucão enviado para " + nameOf(m) + "! 💧"
+            : "Cutucão enviado! " + nameOf(m) + " vai ver quando abrir o app (as notificações estão desligadas).", !r.error);
+          renderMembers();
+        };
+        acts.appendChild(pk);
+      }
+      if (acts.childNodes.length || (owner && m.user_id !== me.id)) mid.appendChild(acts);
+      if (owner && m.user_id !== me.id) {
         const mine = logs.filter(l => l.user_id === m.user_id);
-        const acts = document.createElement("div"); acts.className = "chips";
         if (mine.length) {
           const t = document.createElement("button"); t.className = "chip";
           t.textContent = (openLogs[m.user_id] ? "Esconder" : "Registros de hoje") + " (" + mine.length + ")";
           t.onclick = () => { openLogs[m.user_id] = !openLogs[m.user_id]; renderMembers(); };
           acts.appendChild(t);
         }
-        const rm = document.createElement("button"); rm.className = "chip danger"; rm.textContent = "Remover do grupo";
+        const rm = document.createElement("button"); rm.className = "chip danger"; rm.textContent = "🚫 Remover do grupo";
         rm.onclick = () => removeMember(m); acts.appendChild(rm);
-        mid.appendChild(acts);
         if (openLogs[m.user_id]) mine.forEach(l => {
           const li = document.createElement("div"); li.className = "nm mut"; li.style.marginTop = "4px";
           const tx = document.createElement("span");
@@ -1657,6 +2190,8 @@ async function addLog(ml, blob) {
   if (r === "net") return enqueue(item);
   if (r) { note(r); return; }
   await load();
+  // aviso com "Desfazer" (o mesmo do botão "Desfazer último"), se nada mais importante estiver na tela
+  if (!$("note").textContent) note("+" + ml + " ml registrados", true, { label: "Desfazer", run: undoLast });
 }
 
 // envia um registro (foto primeiro). Devolve "" (deu certo), "net" (sem internet) ou a mensagem de erro.
@@ -1774,14 +2309,16 @@ $("custom").onclick = async () => {
   });
   if (v) ask(parseInt(v, 10));
 };
-$("undo").onclick = async () => {
+$("undo").onclick = () => undoLast();
+async function undoLast() {
   const last = logs.find(l => l.user_id === me.id); // lista vem do mais novo para o mais antigo
   if (!last) return;
   const { error } = await sb.from("logs").delete().eq("id", last.id);
   if (error) { note("Não consegui desfazer: " + error.message); return; }
   if (last.photo_path) await sb.storage.from("proofs").remove([last.photo_path]);
   await load();
-};
+  note("Registro de " + last.ml + " ml desfeito.", true);
+}
 
 // atualiza o placar de tempos em tempos (e vira o dia sozinho)
 setInterval(load, 30000);
