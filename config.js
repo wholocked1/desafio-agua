@@ -19,5 +19,7 @@ window.APP_CONFIG = {
   REQUIRE_PHOTO_ALL: false,
 
   //chave pública do CAPTCHA
-  TURNSTILE_SITE_KEY: "0x4AAAAAAF6F7HPNO6uaksFm"
+  TURNSTILE_SITE_KEY: "0x4AAAAAAF6F7HPNO6uaksFm",
+
+  CONTACT_EMAIL: "anacarol.nami@gmail.com"
 };

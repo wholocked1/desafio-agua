@@ -225,6 +225,7 @@ function setMode(mode) {
   $("authHint").textContent = forgot ? "Digite o e-mail da sua conta. Vamos mandar um link para você criar uma senha nova." : "";
   $("authHint").hidden = !forgot;
   $("aName").hidden = !signup;
+  $("aPolicyPre").hidden = !signup; // "Ao criar a conta, você concorda com a Política de privacidade"
   $("aPass").hidden = forgot;
   $("aPass").placeholder = signup ? "Senha (mín. 8 caracteres)" : "Senha";
   $("aPass").autocomplete = signup ? "new-password" : "current-password";

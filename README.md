@@ -34,6 +34,7 @@ Nas próximas atualizações do app, troque só o `index.html` (e os outros arqu
 | `app.css` | o visual (cores, tamanhos, espaçamentos) | ao mudar a aparência |
 | `app.js` | a lógica do app | ao mudar o funcionamento |
 | `config.js` | URL e chaves públicas, meta padrão | uma vez, na configuração |
+| `privacidade.html` e `privacidade.js` | a política de privacidade (link no login e no Perfil); o e-mail de contato vem do `CONTACT_EMAIL` do `config.js` | se mudar o que o app guarda |
 | `sw.js` | o que deixa o app instalável, abrir sem internet e os lembretes | raramente |
 | `vercel.json` | regras de segurança da hospedagem | raramente |
 
@@ -74,10 +75,11 @@ O app abre em tela cheia com o ícone da gota, pede permissão da câmera na pri
 Envie os arquivos novos para o GitHub. O app se atualiza sozinho nos celulares: ao ser aberto (ou ao voltar para ele), confere a versão publicada e, se mudou, recarrega e mostra "App atualizado ✅". Ele espera se houver uma janela aberta, um envio em andamento ou se estiver sem internet. Não precisa desinstalar.
 
 **A regra para isso funcionar:** toda vez que mudar o `app.js` ou o `app.css`, aumente o número da versão nos três lugares, sempre o mesmo número:
-- `index.html`: `app.css?v=19` e `app.js?v=19` → `?v=20`;
-- `sw.js`: `CACHE = "agua-v19"` → `"agua-v20"` e, na lista `SHELL`, `app.css?v=19` e `app.js?v=19` → `?v=20`.
+- `index.html`: `app.css?v=20` e `app.js?v=20` → `?v=21`;
+- `sw.js`: `CACHE = "agua-v20"` → `"agua-v21"` e, na lista `SHELL`, `app.css?v=20` e `app.js?v=20` → `?v=21`;
+- `privacidade.html`: `app.css?v=20` → `?v=21`.
 
-Versão atual: **19**.
+Versão atual: **20**.
 
 ## Grupos e links de convite
 Qualquer pessoa pode criar uma conta. Depois de entrar, ela faz uma de duas coisas:
